@@ -3,7 +3,7 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
-## Status: Phase A — validated relational base + teammate head-to-head spine ✅
+## Status: Phase A ✅ + Phase B (championship analysis) ✅
 
 Phase A is **ingest + a validated relational base + the factual teammate
 head-to-head spine** only. No rankings, no Elo, no car-normalisation, no UI —
@@ -15,6 +15,7 @@ reconciles to a known-true value before we proceed (see the gate below).
 ```bash
 pip install duckdb pyarrow
 python3 pipeline/run_phase_a.py     # ingest -> teammate H2H -> gate (exits non-zero on any FAIL)
+python3 pipeline/run_phase_b.py     # Phase A + championship features + Phase B gate
 ```
 
 Outputs land in `build/f1.duckdb` and `data/parquet/` (both git-ignored — they
@@ -119,3 +120,159 @@ modelling car pace, so it is the factual spine later phases build on.
   Gasly **10–1** (a factor in Gasly's mid-season demotion). ✅
 
 Any FAIL exits non-zero and blocks the phase.
+
+---
+
+# Phase B — championship analysis ✅
+
+Three **new, fully-factual** championship views — pure recomputation of real
+results (no modelling, no estimates, no car-normalisation; that's a later phase).
+Each feature has its own gate. The **master gate** (Feature 1a) is the most
+important: recomputing every season under its *own* historical system must
+reproduce the real champion.
+
+Run: `python3 pipeline/run_phase_b.py` → **Phase B gate: 11 PASS / 0 FAIL**.
+
+| Script | Feature |
+|--------|---------|
+| `pipeline/points_systems.py` | Catalogue of points tables + dropped-scores rules (sourced). |
+| `pipeline/feature1_points_invariance.py` | "Would the champion change under different scoring?" |
+| `pipeline/feature2_clinch.py` | "When was the title clinched, and how close did it get?" |
+| `pipeline/feature3_teammate_champions.py` | "How did each champion fare vs their teammate?" |
+| `pipeline/gate_phase_b.py` | All three gates; exits non-zero on any FAIL. |
+
+## Points-system catalogue (`points_systems.py`)
+
+Distinct **points tables** (position → points) + fastest-lap rule + the seasons
+each applied (sources in code):
+
+| Table | Points | FL | Seasons |
+|-------|--------|----|---------|
+| 8-6-4-3-2 | top 5 | +1 fastest lap (top-5 finisher) | 1950–1959 |
+| 8-6-4-3-2-1 | top 6 | — | 1960 |
+| 9-6-4-3-2-1 | top 6 | — | 1961–1990 |
+| 10-6-4-3-2-1 | top 6 | — | 1991–2002 |
+| 10-8-6-5-4-3-2-1 | top 8 | — | 2003–2009 |
+| 25-18-15-12-10-8-6-4-2-1 | top 10 | — | 2010–2018 |
+| 25-…-1 | top 10 | +1 fastest lap (if top-10) | 2019–2024 (+sprint pts) |
+
+**Dropped-scores** (a *season* property, not a table property) is catalogued per
+season: `best N` (1950–1966, 1981–1990), split-season `best A of first H + best B
+of rest` (1967–1980), or all-count (1991+). Validated by reproducing official
+`driver_standings` totals: **74/75 seasons reconcile exactly**. **1956 is flagged**
+(shared-drive points interacting with the best-5 rule leave Fangio's official
+total 1.5 below the naive best-5; champion unaffected) — flagged, not guessed.
+
+### Feature 1 — points-system invariance
+
+Stated assumptions (in code): the **actual champion** is real history; the
+**faithful recomputation** (real per-race points + the season's real dropped
+rule) is what reconciles to history; the **cross-table comparison** applies each
+table's position vector to real finishing positions with **all results counting
+and no fastest-lap points held constant**, to isolate the table shape. The
+dropped-scores effect is shown explicitly for each season's own table.
+
+Output (`f1_points_invariance.parquet`): per season × points table → champion
+under that table and whether it differs from the actual champion. **16/75 seasons
+would have a different champion under some table.** Highlights (all factual
+recomputations): **2008** → Massa under the old 6-pt-gap systems; **1958** → Moss
+under 10-6-4; **1988** the dropped-scores story — best-11 (real) **Senna 90 >
+Prost 87**, total points **Prost 105 > Senna 94**.
+
+### Feature 2 — clinch geometry
+
+Remaining-points math against the official running standings. **Weekend max** =
+race-win + fastest-lap (where the era awards it) + sprint-win (sprint weekends).
+**Clinch** = first round where `champion > best_rival + remaining_max` (strict;
+ties are *not* recomputed). Sound (never early); possibly one race conservative
+pre-1991 due to dropped-scores (flagged).
+
+Output (`f1_clinch.parquet`): `clinch_round`, `clinch_race`,
+`races_remaining_at_clinch`, `went_to_finale`, `closest_margin`. **36/75 titles
+went to the final race.** Validated: 2008 (Brazil, finale), 2021 (Abu Dhabi,
+finale), 2002 (France, round 11, 6 to spare — the famous early clinch).
+
+### Feature 3 — teammate-adjusted champions
+
+Joins each season's champion to Phase A's teammate-H2H spine (sums across all
+teammates that season; ties back to Phase A exactly). Respects the 1994+
+qualifying boundary (pre-1994 = race H2H only).
+
+Output (`f1_champion_teammate.parquet`). Anomalies surfaced: champions
+**out-qualified by a teammate** — 2007 Räikkönen (8-9), 2009 Button (7-10), 2014
+Hamilton (7-11), **2016 Rosberg (8-12 vs Hamilton)**; champions **out-raced** —
+e.g. 1989 Prost (1-7 vs Senna), 2016 Rosberg (9-10). Dominant: 2024 Verstappen
+(23-1 vs Pérez), 2013 Vettel (17-2 vs Webber).
+
+## Phase B gate (11 PASS / 0 FAIL)
+
+| Check | Result |
+|-------|--------|
+| **MASTER**: own-system recomputation reproduces the real champion, ALL 75 seasons | PASS (75/75) |
+| Own-system reproduces official totals (unflagged seasons) | PASS (74/75 exact; 1956 flagged) |
+| Points-table catalogue matches observed per-position points | PASS |
+| 1988 best-11 → Senna; total points → Prost | PASS |
+| 2008 & 2021 titles decided at the final race | PASS |
+| 2002 Schumacher clinched round 11, 6 races to spare | PASS |
+| 2016 Rosberg out-qualified by teammate Hamilton (8-12) | PASS |
+| Feature 3 ties back to Phase A teammate spine (no divergence) | PASS |
+| 2013 Vettel dominated teammate in qualifying (17-2) | PASS |
+
+New Parquet artifacts: `f1_points_invariance`, `f1_clinch`, `f1_champion_teammate`.
+
+---
+
+# Phase C — "Lift and Coast" front-end (identity, first pass) ✅
+
+A static, deployable **timing-screen / telemetry** presentation layer over the
+validated Phase A/B numbers. Pure recomputation only — the UI invents nothing.
+
+```bash
+python3 pipeline/run_phase_b.py     # rebuild + validate the data
+python3 pipeline/export_web.py       # -> web/data.js (self-contained)
+open web/index.html                  # or serve web/ as a static site
+```
+
+The site is **zero-dependency and serverless**: `export_web.py` inlines all
+artifacts into `web/data.js` (`window.LAC_DATA`), so `web/index.html` works
+straight from `file://` or any static host (e.g. GitHub Pages).
+
+## Identity
+
+- **Wordmark** "LIFT AND COAST" — the racing term for backing off the throttle to
+  save fuel/tyres/brakes; a wry, insider name about tactical restraint and race
+  management, not raw speed. Rendered in a technical display face (Chakra Petch)
+  with a blinking telemetry cursor.
+- **Aesthetic** — dark technical base, **monospace tabular numerals** (IBM Plex
+  Mono) as the signature typography for every time, gap and points figure; faint
+  CRT scanlines; broadcast-hardware feel.
+- **Accent** — a single disciplined **sodium-amber** (`#ffb000`), the pit-lane /
+  trackside-light tone, fitting the measured, cerebral mood. (First pass — easy to
+  retune now that it's live.)
+- **Timing-screen colour semantics** as an honest data-encoding system, distinct
+  from the brand accent: **purple** = outright best, **green** = personal/season
+  best (held), **yellow** = slower / tie, used for teammate H2H bars and the
+  invariance table.
+
+## What it shows (per season)
+
+A four-panel dossier driven by a season selector (← / → / keyboard):
+
+1. **Champion** — name, constructor, points, wins (tabular numerals).
+2. **Clinch geometry** (Feature 2) — clinch round + race, a round-by-round bar
+   with the clinch marker, went-to-the-wire vs races-to-spare, closest P1–P2
+   margin.
+3. **Points-system invariance** (Feature 1) — a mini timing table: champion under
+   every historical scoring table, with the era's real table marked, **flips** in
+   amber and **ties shown as ties** (no invented tie-break).
+4. **Vs. teammate** (Feature 3) — qualifying & race H2H split bars (purple/yellow),
+   head-to-head points, the pre-1994 no-quali note, and an **anomaly** callout when
+   the champion was beaten by their own teammate.
+
+A stat tower headlines the dataset (75 seasons, 1,125 GPs, 36 finale titles, 14
+scoring-sensitive seasons, 10 with a tie under some system) and the footer carries
+the **non-affiliation disclaimer** and the **CC0 data credit** (Ergast / Chris
+Newell, rohanrao on Kaggle).
+
+> No F1/FIA trademarks or logos are used. "Lift and Coast" is generic racing
+> terminology.
