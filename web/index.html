@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lift and Coast — championship telemetry, 1950–2024</title>
+<meta name="description" content="Lift and Coast — a timing-screen view of Formula One championship history. Points-system invariance, clinch geometry and teammate head-to-heads. Pure recomputation of real results.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="scanlines" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="wordmark">
+    <span class="wm-lift">LIFT</span><span class="wm-amp">&amp;</span><span class="wm-coast">COAST</span>
+    <span class="wm-cursor" aria-hidden="true"></span>
+  </div>
+  <div class="topbar-readout">
+    <span class="ro-label">TELEMETRY</span>
+    <span class="ro-sep">/</span>
+    <span class="ro-num" id="ro-span">1950–2024</span>
+    <span class="ro-gap" id="ro-gap">+0.000</span>
+  </div>
+</header>
+
+<main>
+  <!-- hero stat tower -->
+  <section class="tower" id="tower" aria-label="dataset summary"></section>
+
+  <!-- season control -->
+  <section class="control">
+    <button class="step" id="prev" aria-label="previous season">&#9664;</button>
+    <div class="season-display">
+      <label for="season" class="ctl-label">SEASON</label>
+      <select id="season" aria-label="select season"></select>
+    </div>
+    <button class="step" id="next" aria-label="next season">&#9654;</button>
+    <div class="flags" id="flags"></div>
+  </section>
+
+  <!-- dossier -->
+  <section class="grid">
+    <article class="panel panel-champ" id="p-champ">
+      <h2 class="panel-h"><span class="dot"></span>CHAMPION</h2>
+      <div class="panel-body" id="champ-body"></div>
+    </article>
+
+    <article class="panel panel-clinch" id="p-clinch">
+      <h2 class="panel-h"><span class="dot"></span>CLINCH GEOMETRY</h2>
+      <div class="panel-body" id="clinch-body"></div>
+    </article>
+
+    <article class="panel panel-inv" id="p-inv">
+      <h2 class="panel-h"><span class="dot"></span>POINTS-SYSTEM INVARIANCE
+        <span class="panel-sub">would the title change under other scoring?</span></h2>
+      <div class="panel-body" id="inv-body"></div>
+    </article>
+
+    <article class="panel panel-tm" id="p-tm">
+      <h2 class="panel-h"><span class="dot"></span>VS. TEAMMATE
+        <span class="panel-sub">same car — the only car-controlled comparison</span></h2>
+      <div class="panel-body" id="tm-body"></div>
+    </article>
+  </section>
+
+  <!-- timing-colour legend -->
+  <section class="legend" aria-label="timing colour key">
+    <span class="leg-title">TIMING KEY</span>
+    <span class="leg-item"><i class="sw sw-purple"></i>outright best</span>
+    <span class="leg-item"><i class="sw sw-green"></i>session / season best</span>
+    <span class="leg-item"><i class="sw sw-yellow"></i>slower / tie</span>
+    <span class="leg-item"><i class="sw sw-amber"></i>changed outcome</span>
+  </section>
+</main>
+
+<footer class="foot">
+  <p class="disclaimer"><strong>Lift and Coast</strong> is an independent, non-commercial history project. It is
+  <strong>not affiliated with, endorsed by, or associated with Formula 1, the FIA, Formula One World Championship Ltd, or any team</strong>.
+  "F1" and "Formula 1" are trademarks of their respective owners and are not used as branding here.</p>
+  <p class="credit">Data: <em>Formula 1 World Championship (1950–2024)</em>, compiled from the Ergast Developer API
+  (Chris Newell) and published by <em>rohanrao</em> on Kaggle — CC0 / public domain.
+  All figures are pure recomputation of real results; no modelling.</p>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -219,3 +219,60 @@ e.g. 1989 Prost (1-7 vs Senna), 2016 Rosberg (9-10). Dominant: 2024 Verstappen
 | 2013 Vettel dominated teammate in qualifying (17-2) | PASS |
 
 New Parquet artifacts: `f1_points_invariance`, `f1_clinch`, `f1_champion_teammate`.
+
+---
+
+# Phase C — "Lift and Coast" front-end (identity, first pass) ✅
+
+A static, deployable **timing-screen / telemetry** presentation layer over the
+validated Phase A/B numbers. Pure recomputation only — the UI invents nothing.
+
+```bash
+python3 pipeline/run_phase_b.py     # rebuild + validate the data
+python3 pipeline/export_web.py       # -> web/data.js (self-contained)
+open web/index.html                  # or serve web/ as a static site
+```
+
+The site is **zero-dependency and serverless**: `export_web.py` inlines all
+artifacts into `web/data.js` (`window.LAC_DATA`), so `web/index.html` works
+straight from `file://` or any static host (e.g. GitHub Pages).
+
+## Identity
+
+- **Wordmark** "LIFT AND COAST" — the racing term for backing off the throttle to
+  save fuel/tyres/brakes; a wry, insider name about tactical restraint and race
+  management, not raw speed. Rendered in a technical display face (Chakra Petch)
+  with a blinking telemetry cursor.
+- **Aesthetic** — dark technical base, **monospace tabular numerals** (IBM Plex
+  Mono) as the signature typography for every time, gap and points figure; faint
+  CRT scanlines; broadcast-hardware feel.
+- **Accent** — a single disciplined **sodium-amber** (`#ffb000`), the pit-lane /
+  trackside-light tone, fitting the measured, cerebral mood. (First pass — easy to
+  retune now that it's live.)
+- **Timing-screen colour semantics** as an honest data-encoding system, distinct
+  from the brand accent: **purple** = outright best, **green** = personal/season
+  best (held), **yellow** = slower / tie, used for teammate H2H bars and the
+  invariance table.
+
+## What it shows (per season)
+
+A four-panel dossier driven by a season selector (← / → / keyboard):
+
+1. **Champion** — name, constructor, points, wins (tabular numerals).
+2. **Clinch geometry** (Feature 2) — clinch round + race, a round-by-round bar
+   with the clinch marker, went-to-the-wire vs races-to-spare, closest P1–P2
+   margin.
+3. **Points-system invariance** (Feature 1) — a mini timing table: champion under
+   every historical scoring table, with the era's real table marked, **flips** in
+   amber and **ties shown as ties** (no invented tie-break).
+4. **Vs. teammate** (Feature 3) — qualifying & race H2H split bars (purple/yellow),
+   head-to-head points, the pre-1994 no-quali note, and an **anomaly** callout when
+   the champion was beaten by their own teammate.
+
+A stat tower headlines the dataset (75 seasons, 1,125 GPs, 36 finale titles, 14
+scoring-sensitive seasons, 10 with a tie under some system) and the footer carries
+the **non-affiliation disclaimer** and the **CC0 data credit** (Ergast / Chris
+Newell, rohanrao on Kaggle).
+
+> No F1/FIA trademarks or logos are used. "Lift and Coast" is generic racing
+> terminology.

@@ -88,14 +88,21 @@ def faithful_champion(real_pts_season, season):
 
 
 def champion_under_table(finish_season, table_key):
-    """Champion if `table_key` (position vector, all results, no FL) had been used."""
+    """Champion if `table_key` (position vector, all results, no FL) had been used.
+
+    Returns (winner, top_points, totals, tied) where `winner` is the unique
+    leader's driverId, or None if the top is a TIE; `tied` is the list of
+    driverIds level at the top. We never invent a tie-break (the historical
+    countback rules are noted, not recomputed)."""
     totals = defaultdict(float)
     for drv, byr in finish_season.items():
         for rnd, pos in byr.items():
             if pos is not None:
                 totals[drv] += points_for_position(table_key, pos, fl=False)
-    champ = max(totals, key=lambda d: totals[d])
-    return champ, totals[champ], totals
+    top = max(totals.values())
+    tied = sorted((d for d, p in totals.items() if abs(p - top) < 1e-9), key=str)
+    winner = tied[0] if len(tied) == 1 else None
+    return winner, top, totals, tied
 
 
 def build(con):
@@ -108,32 +115,47 @@ def build(con):
 
     table_keys = list(POINTS_TABLES.keys())
     out_rows = []
-    n_change_any = 0
+    flip_seasons, tie_seasons = set(), set()
     for season in sorted(actual):
         actual_drv, actual_pts = actual[season]
         for tk in table_keys:
-            champ, champ_pts, _ = champion_under_table(finish[season], tk)
-            changed = (champ != actual_drv)
-            out_rows.append((season, name(actual_drv), tk, name(champ), changed, round(champ_pts, 2)))
-        if any(r[4] for r in out_rows if r[0] == season):
-            n_change_any += 1
+            winner, champ_pts, _, tied = champion_under_table(finish[season], tk)
+            is_tie = winner is None
+            if is_tie:
+                label = "TIE: " + " / ".join(name(d) for d in tied)
+                changed = False
+                if actual_drv not in tied:
+                    tie_seasons.add(season)   # actual champ not even level at top
+                else:
+                    tie_seasons.add(season)
+            else:
+                label = name(winner)
+                changed = (winner != actual_drv)
+                if changed:
+                    flip_seasons.add(season)
+            out_rows.append((season, name(actual_drv), tk, label, changed, is_tie,
+                             round(champ_pts, 2)))
 
     # persist
     con.execute("""
         CREATE OR REPLACE TABLE f1_points_invariance (
             season INT, actual_champion VARCHAR, points_table VARCHAR,
-            champion_under_table VARCHAR, champion_changes BOOLEAN, table_points DOUBLE
+            champion_under_table VARCHAR, champion_changes BOOLEAN,
+            is_tie BOOLEAN, table_points DOUBLE
         )
     """)
-    con.executemany("INSERT INTO f1_points_invariance VALUES (?,?,?,?,?,?)", out_rows)
+    con.executemany("INSERT INTO f1_points_invariance VALUES (?,?,?,?,?,?,?)", out_rows)
     out = PARQUET / "f1_points_invariance.parquet"
     con.execute(f"COPY f1_points_invariance TO '{out}' (FORMAT PARQUET)")
 
-    # report: seasons where SOME table changes the champion
-    print(f"\nSeasons where at least one points TABLE would change the champion: {n_change_any}/{len(actual)}")
-    print("(cross-table comparison: position-vector only, all results count, no FL)\n")
-    changed_seasons = sorted({r[0] for r in out_rows if r[4]})
-    for season in changed_seasons:
+    # report: genuine flips (unique different champion) and ties separately
+    print(f"\nSeasons with a UNIQUE different champion under some table (true flips): "
+          f"{len(flip_seasons)}/{len(actual)}")
+    print(f"Seasons where some table produces a TIE at the top (no invented tie-break): "
+          f"{len(tie_seasons)}/{len(actual)}")
+    print("(cross-table: position-vector only, all results count, no FL; era tie-breaks "
+          "were countback on wins/places — noted, not recomputed)\n")
+    for season in sorted(flip_seasons):
         actual_drv = name(actual[season][0])
         flips = [(r[2], r[3]) for r in out_rows if r[0] == season and r[4]]
         flip_str = "; ".join(f"{tk.split('_')[0][1:]}->{ch}" for tk, ch in flips)
@@ -142,7 +164,7 @@ def build(con):
     # explicit 1988 dropped-scores demonstration (own table, drop vs no-drop)
     print("\n--- 1988 dropped-scores demonstration (own table 9-6-4-3-2-1) ---")
     s = 1988
-    _, _, nodrop = champion_under_table(finish[s], SEASON_TABLE[s])
+    _, _, nodrop, _ = champion_under_table(finish[s], SEASON_TABLE[s])
     _, _, faith = faithful_champion(real_pts[s], s)
     top_nodrop = sorted(nodrop.items(), key=lambda x: -x[1])[:2]
     top_drop = sorted(faith.items(), key=lambda x: -x[1])[:2]

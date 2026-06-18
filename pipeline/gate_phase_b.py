@@ -93,7 +93,7 @@ def main():
 
     # (1b) 1988 dropped-scores spot-check
     s = 1988
-    _, _, nodrop = champion_under_table(finish[s], SEASON_TABLE[s])
+    _, _, nodrop, _ = champion_under_table(finish[s], SEASON_TABLE[s])
     _, _, drop = faithful_champion(real_pts[s], s)
     nd_champ = max(nodrop, key=lambda d: nodrop[d])
     dr_champ = max(drop, key=lambda d: drop[d])
