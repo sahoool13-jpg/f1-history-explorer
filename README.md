@@ -276,3 +276,35 @@ Newell, rohanrao on Kaggle).
 
 > No F1/FIA trademarks or logos are used. "Lift and Coast" is generic racing
 > terminology.
+
+## Cross-season discovery views (Phase C addendum)
+
+The front-end started as a per-season dossier; it now also has **browsable,
+cross-season leaderboards** so the Phase B findings are discoverable as lists,
+not one season at a time. Hash-routed, same timing-screen identity, and every
+figure traces to the validated Phase A/B artifacts (presentation only — nothing
+recomputed; the exporter only *reads* `driver_standings` P2 to add the runner-up
+name for the finals view).
+
+| Route | View | Rows | Reconciles to |
+|-------|------|-----:|---------------|
+| `#/beaten` | Champions beaten by their teammate | 9 | `f1_champion_teammate.out_qualified/out_raced` |
+| `#/scoring` | Scoring-sensitive titles — **flips (14)** and **ties (10)** kept distinct | 24 | `f1_points_invariance` (`scoringSensitive`=14, `tieSeasons`=10) |
+| `#/finals` | Final-race deciders, closest-margin first | 36 | `f1_clinch.went_to_finale` |
+| `#/clinch` | Earliest clinches (most races to spare) | 75 | `f1_clinch.races_remaining_at_clinch` |
+
+- **Navigation:** a tab bar under the masthead (`SEASON DOSSIER · BEATEN BY
+  TEAMMATE · SCORING-SENSITIVE · FINAL-RACE DECIDERS · EARLY CLINCHES`); the
+  stat-tower cells for "to the final race" / "scoring-sensitive" / "tie under a
+  system" are also click-throughs.
+- **Discovery → detail:** every list row deep-links to that season's dossier
+  (`#/s/<year>`); the legacy `#<year>` hash still resolves.
+- **Integrity:** flips and ties stay distinct (the Phase C tie-detection fix). A
+  season can appear in both scoring blocks when different tables give different
+  outcomes (e.g. 2008 flips to Massa under the 6-pt systems but ties under
+  8-6-4-3-2) — shown honestly, not conflated.
+- Timing-colour semantics carry through: purple/yellow for H2H winner/loser,
+  amber for "changed outcome", green for dominance (races to spare).
+
+> Validated via Python + jsdom in the sandbox (DuckDB-wasm can't run here); the
+> live render still needs an eyeball check on the deployed site.

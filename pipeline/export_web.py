@@ -49,6 +49,17 @@ def build(con):
 
     clinch = {r[0]: r for r in q("SELECT * FROM f1_clinch")}
     tm = {r[0]: r for r in q("SELECT * FROM f1_champion_teammate")}
+
+    # season runner-up (final-standings P2) — a validated-artifact read, not a recompute
+    runner = {r[0]: (r[1], round(r[2], 1)) for r in q("""
+        WITH finals AS (SELECT season, max(round) mr FROM fact_races GROUP BY season)
+        SELECT r.season, d.full_name, CAST(ds.points AS DOUBLE)
+        FROM driver_standings ds JOIN fact_races r USING (raceId)
+        JOIN finals f ON f.season=r.season AND f.mr=r.round
+        JOIN dim_drivers d USING (driverId)
+        WHERE CAST(ds.position AS INT)=2
+    """)}
+
     inv = {}
     for season, _, tk, ch, changes, is_tie, tp in q("SELECT * FROM f1_points_invariance"):
         inv.setdefault(season, []).append(
@@ -67,6 +78,8 @@ def build(con):
             "year": yr,
             "champion": cm[1], "code": cm[2], "constructor": cm[3],
             "points": round(cm[4], 1), "wins": cm[5],
+            "runnerUp": (runner.get(yr) or [None, None])[0],
+            "runnerUpPoints": (runner.get(yr) or [None, None])[1],
             "clinch": {
                 "round": cl[2], "race": cl[3], "totalRounds": cl[4],
                 "racesRemaining": cl[5], "wentToFinale": bool(cl[6]),

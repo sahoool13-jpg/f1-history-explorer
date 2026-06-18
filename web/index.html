@@ -26,10 +26,29 @@
   </div>
 </header>
 
+<nav class="tabs" id="tabs" aria-label="views">
+  <a class="tab" data-route="#/" href="#/">SEASON DOSSIER</a>
+  <a class="tab" data-route="#/beaten" href="#/beaten">BEATEN BY TEAMMATE</a>
+  <a class="tab" data-route="#/scoring" href="#/scoring">SCORING-SENSITIVE</a>
+  <a class="tab" data-route="#/finals" href="#/finals">FINAL-RACE DECIDERS</a>
+  <a class="tab" data-route="#/clinch" href="#/clinch">EARLY CLINCHES</a>
+</nav>
+
 <main>
   <!-- hero stat tower -->
   <section class="tower" id="tower" aria-label="dataset summary"></section>
 
+  <!-- ===================== cross-season list views ===================== -->
+  <section id="view-list" hidden>
+    <div class="list-head">
+      <h1 class="list-title" id="list-title"></h1>
+      <p class="list-sub" id="list-sub"></p>
+    </div>
+    <div id="list-body"></div>
+  </section>
+
+  <!-- ===================== per-season dossier ===================== -->
+  <div id="view-season">
   <!-- season control -->
   <section class="control">
     <button class="step" id="prev" aria-label="previous season">&#9664;</button>
@@ -66,7 +85,9 @@
     </article>
   </section>
 
-  <!-- timing-colour legend -->
+  </div><!-- /#view-season -->
+
+  <!-- timing-colour legend (shared) -->
   <section class="legend" aria-label="timing colour key">
     <span class="leg-title">TIMING KEY</span>
     <span class="leg-item"><i class="sw sw-purple"></i>outright best</span>
