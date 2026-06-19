@@ -255,17 +255,20 @@ def build(con):
         },
     }
 
-    # ---- Phase J: composite driver-quality axes (user-weighted, no fixed ranking) ----
-    qa = q("""SELECT driverId, driver_name, code, n_seasons, is_active,
-                     z_pace, z_racecraft, z_longevity, zci_pace, zci_racecraft, zci_longevity,
-                     pace_s, racecraft_pos, longevity, missing_axes
+    # ---- Phase J/K: composite driver-quality axes (user-weighted, EB-shrunk) ----
+    qa = q("""SELECT driver_name, code, n_seasons, is_active, cohort,
+                     zc_pace, zc_race, zc_long, szc_pace, szc_race, szc_long,
+                     zw_pace, zw_race, zw_long, szw_pace, szw_race, szw_long,
+                     pace_s, racecraft_pos, longevity
               FROM driver_quality_axes WHERE is_composite_eligible=1
-              ORDER BY z_pace+z_racecraft+z_longevity DESC""")
+              ORDER BY zc_pace+zc_race+zc_long DESC""")
     quality_drivers = [{
-        "name": r[1], "code": r[2], "nSeasons": r[3], "active": bool(r[4]),
-        "z": [round(r[5], 3), round(r[6], 3), round(r[7], 3)],
-        "sz": [round(r[8], 3), round(r[9], 3), round(r[10], 3)],
-        "raw": [round(r[11], 3), round(r[12], 2), round(r[13], 1)],
+        "name": r[0], "code": r[1], "nSeasons": r[2], "active": bool(r[3]), "era": r[4],
+        "cross":  {"z": [round(r[5], 3), round(r[6], 3), round(r[7], 3)],
+                   "sz": [round(r[8], 3), round(r[9], 3), round(r[10], 3)]},
+        "within": {"z": [round(r[11], 3), round(r[12], 3), round(r[13], 3)],
+                   "sz": [round(r[14], 3), round(r[15], 3), round(r[16], 3)]},
+        "raw": [round(r[17], 3), round(r[18], 2), round(r[19], 1)],
     } for r in qa]
     qpart = q("""SELECT driver_name, code, n_seasons, missing_axes,
                         has_pace, has_racecraft, has_longevity
@@ -276,8 +279,9 @@ def build(con):
         "name": r[0], "code": r[1], "nSeasons": r[2], "missing": r[3],
         "has": [bool(r[4]), bool(r[5]), bool(r[6])],
     } for r in qpart]
-    nmeta = {r[0]: {"mean": r[1], "std": r[2]} for r in
-             q("SELECT axis, ref_mean, ref_std FROM quality_norm_meta")}
+    tau = {}
+    for mode, axis, t2 in q("SELECT mode, axis, tau2 FROM quality_norm_meta"):
+        tau.setdefault(mode, {})[axis] = round(t2, 3)
     quality = {
         "axes": [
             {"key": "pace", "label": "Pace", "unit": "s vs era backbone (G)",
@@ -289,7 +293,8 @@ def build(con):
         ],
         "drivers": quality_drivers,
         "partial": quality_partial,
-        "norm": nmeta,
+        "eras": ["1994-2003", "2004-2013", "2014-2024"],
+        "tau2": tau,
         "refN": q("SELECT ref_n FROM quality_norm_meta LIMIT 1")[0][0],
         "z95": 1.959964,
     }
