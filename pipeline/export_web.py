@@ -205,9 +205,43 @@ def build(con):
             pairwise[key] = round(ci, 3)
 
     resid = [r[0] for r in q("SELECT residual_s FROM pace_model_residual")]
+
+    # ---- Phase F TIME-VARYING model: per-driver career-arc trajectories -------
+    # teammate(s) per (driver, season) — context for the hover, read from the
+    # measured Tier-1 input (displayed as evidence, not recomputed).
+    tm_ctx = {}
+    for season, a, b, n in q("""SELECT season, driverA, driverB, n_included
+                                FROM quali_teammate_delta_pairseason WHERE median_gap_s IS NOT NULL"""):
+        tm_ctx.setdefault((a, season), []).append((dname[b][1], dname[b][0], n))
+        tm_ctx.setdefault((b, season), []).append((dname[a][1], dname[a][0], n))
+
+    tv_rows = q("""SELECT driverId, driver_name, code, season, rating_s_estimate,
+                          ci95_halfwidth_s, ci95_low, ci95_high, n_teammate_edges, confidence_flag
+                   FROM driver_season_pace_estimate ORDER BY driverId, season""")
+    trajectories = {}
+    for (did, nm, cd, season, rating, ci, lo, hi, ne, flag) in tv_rows:
+        tj = trajectories.setdefault(did, {"id": did, "name": nm, "code": cd, "seasons": []})
+        tms = sorted(tm_ctx.get((did, season), []), key=lambda x: -x[2])
+        tj["seasons"].append({
+            "season": season, "rating": rating, "ci95": ci, "ciLow": lo, "ciHigh": hi,
+            "nEdges": ne, "flag": flag,
+            "tm": [{"code": c, "name": n, "n": k} for (c, n, k) in tms],
+        })
+    for tj in trajectories.values():
+        ss = [s["season"] for s in tj["seasons"]]
+        tj["from"], tj["to"], tj["nSeasons"] = min(ss), max(ss), len(ss)
+    # picker list, long arcs first
+    arc_drivers = sorted(({"id": t["id"], "name": t["name"], "code": t["code"],
+                           "from": t["from"], "to": t["to"], "nSeasons": t["nSeasons"]}
+                          for t in trajectories.values() if t["nSeasons"] >= 2),
+                         key=lambda d: (-d["nSeasons"], d["name"]))
+    tv_resid = [r[0] for r in q("SELECT residual_s FROM pace_model_tv_residual")]
+
     model = {
         "drivers": model_drivers,
         "pairwise": pairwise,
+        "trajectories": trajectories,
+        "arcDrivers": arc_drivers,
         "meta": {
             "nDrivers": len([d for d in model_drivers if d["component"] == "giant"]),
             "nEdges": M["n_edges"] if "n_edges" in M else len(M["edges"]),
@@ -215,6 +249,9 @@ def build(con):
             "sigma2": round(float(sigma2), 2),
             "eraFrom": 1994, "eraTo": 2024,
             "medianResidual": round(float(np.median(np.abs(resid))), 3),
+            "tvNodes": len(tv_rows),
+            "tvMedianResidual": round(float(np.median(np.abs(tv_resid))), 3),
+            "tvLambda": 100, "tvDriftSigma": 0.10,
         },
     }
 

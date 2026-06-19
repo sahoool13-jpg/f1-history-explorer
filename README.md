@@ -608,3 +608,29 @@ drivers × 3 λ). All `is_estimate=1`, separate from the measured deltas.
 > Data/computation phase. The natural next presentation pass is **career-arc
 > trajectory charts** (rating vs season with CI ribbons) in the `#/model` view —
 > spec'd for a following pass, keeping the violet "estimate" treatment.
+
+## Surfaced in the UI (`#/model` → Career arcs)
+
+The time-varying model is now the **headline view** at `#/model` ("Career arcs"),
+hand-rolled SVG in the violet estimate treatment (distinct from the amber factual
+panels):
+
+- **Single & multi-driver career arcs** (rating vs season): the point estimate as
+  a line, with a **95% CI ribbon as the hero** — semi-transparent, **widening where
+  evidence thins** (rookie years, single-teammate seasons, short careers; e.g.
+  Alonso 2001 ±0.575 vs his 2004 peak ±0.333). **Faster is up**, axis explicitly
+  labelled (lower s = faster).
+- **Overlay of 2–4 drivers** (default **Schumacher · Alonso · Hamilton**) so peaks,
+  plateaus and declines sit side by side; **overlapping ribbons read as "not
+  confidently separable."** No naked cross-era ranking.
+- **Career gaps are shown, not interpolated** — Schumacher's 2007–2009 absence
+  breaks the line; Alonso's 2019–2020 gap likewise.
+- **Hover any season** → that year's rating ± CI, the teammate(s) and races behind
+  it, and a thin-evidence flag — every point traceable to its evidence.
+- The pre-1994 coverage caveat is carried over: a legend with a short/late arc is a
+  **data limit, not a verdict**.
+
+Reads straight from `driver_season_pace_estimate` (separate `model.trajectories`
+block; `is_estimate` preserved). Below the arcs sits the Phase-E **career-average
+snapshot** for one-number-per-driver context.
+
