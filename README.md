@@ -3,7 +3,7 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
-## Status: Phases A–H ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft)
+## Status: Phases A–I ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity)
 
 Phase A is **ingest + a validated relational base + the factual teammate
 head-to-head spine** only. No rankings, no Elo, no car-normalisation, no UI —
@@ -771,4 +771,73 @@ Artifacts: `driver_racecraft_estimate` (130 drivers; rating + `R_bb` + CI + #edg
 prediction, luck drops — full audit trail), `racecraft_recon_residual`,
 `racecraft_meta` (pace coefficients, R², orthogonality). All `is_estimate=1`, separate
 from measured results. No UI this phase (combination = Phase J, presentation = Phase K).
+
+# Phase I — the LONGEVITY / sustained-level axis ⚠️ CONSTRUCTED ESTIMATE
+
+Pace (G) says how *fast*; racecraft (H) says how well they *converted* it. Neither sees
+**durability** — staying at a competitive level season after season, adapting as the
+sport changes. Phase I measures that, and only that. **Constructed axis** — heavy
+caveats, honest intervals.
+
+Run: `python3 pipeline/run_phase_i.py` → **Phase I gate: 13 PASS / 0 FAIL**.
+
+## Method — effective competitive seasons
+
+For each driver-season with a Phase-G era pace rating `r` (lower = faster):
+
+```
+competitiveness = σ((C0 − r)/KW)        # logistic, saturating in [0,1]; C0=0.30, KW=0.25
+   r≈−0.2 (above backbone) → 0.87  near the front: counts fully
+   r≈+0.1 (grid median)    → 0.68  midfield: counts substantially
+   r≈+0.8 (back of grid)   → 0.10  backmarker: counts little
+presence = min(1, starts / races_in_season)   # partial/reserve year counts partially
+LONGEVITY = Σ presence · competitiveness        # "effective competitive seasons"
+```
+
+The three traps, avoided:
+- **Raw length rewards mediocrity** — years aren't counted; a season counts only insofar
+  as the driver was competitive. (Coulthard, 15 seasons → ranks **#18**, not top-10; by
+  raw length he'd be **#8**.)
+- **Over-adjustment kills orthogonality** — the weight **saturates**, so elite and merely-strong
+  seasons both count ~fully; what survives is *duration at a competitive level*, not pace
+  again. (corr with pace **+0.49**, not 1.)
+- **Brevity ≠ badness** — a brief-but-strong career scores **moderate**, never bottom, and
+  low longevity means *"didn't sustain"*, not *"wasn't good"* (ability lives in G/H).
+  (Leclerc, 7 strong seasons → **6.5**, rivalling Coulthard's 15 weaker ones at 7.9.)
+
+**Uncertainty** has two honest sources, added in quadrature: *statistical* (propagate each
+season's G interval through the weight) and *construction* (recompute across a grid of
+(C0, KW) and take the spread — a constructed axis should wear its arbitrariness). Active
+drivers are flagged: their longevity is *"so far."*
+
+## Phase I gate (13 PASS / 0 FAIL)
+
+| Check | Result |
+|-------|--------|
+| **Top is long-AND-competitive**: Alonso **18.9**, Hamilton **16.0**, Barrichello 15.2, Schumacher 14.3, Räikkönen 14.2 — the four long-elite all top-8 | PASS |
+| **Mediocrity avoided**: Coulthard (15 seasons) ranks **#18** (raw-length #8); weak seasons discounted | PASS |
+| **Brevity ≠ badness**: Leclerc (7 strong seasons) **6.5**, above median, rivals Coulthard's 15-season 7.9 | PASS |
+| **Orthogonality**: corr with pace G **+0.49**, with racecraft H **+0.16** — adds the duration dimension, not redundant | PASS |
+| **The Giovinazzi check**: 4 seasons, **L=2.6** — among genuine careers (≥4 seasons) he's **#47/63, bottom 25%**, well below the group median 4.9 (short AND uncompetitive) | PASS |
+| **Uncertainty**: Hamilton 16.0 ± 1.5 (construction band [14.5, 16.9]); 24 active drivers flagged; genuine careers all carry populated intervals | PASS |
+| Separation/labelling: `is_estimate=1`, measured results untouched | PASS |
+
+**The honest reference-set note:** Giovinazzi sits #47 of *all* 172 only because half the
+field are one-race cameos who sustained even less; against the **63 drivers with real
+careers (≥4 seasons)** he is firmly bottom-quartile — which is the fair read of "short and
+uncompetitive." (The gate originally compared him to all 172 and *failed*; the catch was
+the gate's, and the fix was the reference population, not the model.)
+
+**Honest limits (constructed axis):** Phase-G pace exists only where qualifying timing does
+(**1994+**), so longevity is a **modern-era axis** — pre-1994 greats are out of scope.
+"Effective competitive seasons" is a model construct, not a record; the construction band
+shows how much it moves under different weightings. Low longevity is **never** a verdict on
+ability — Kubica (injury-curtailed) and Leclerc (mid-career) score modestly because they
+*haven't sustained a long career*, not because they lacked pace.
+
+Artifacts: `driver_longevity_estimate` (172 drivers; longevity + statistical CI +
+construction band + mean competitiveness + active flag), `longevity_season_weight` (766
+driver-seasons; the per-season presence × competitiveness audit trail). All
+`is_estimate=1`, separate from measured results. No UI this phase (combination = Phase J,
+presentation = Phase K).
 
