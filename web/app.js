@@ -490,6 +490,169 @@
     return host;
   }
 
+  // 6) PACE MODEL (Phase E) — ESTIMATE, visually distinct from measured ------
+  function sgnFix(x) { return (x < 0 ? "−" : "+") + Math.abs(x).toFixed(3); }
+  function mDriver(id) { return DATA.model.drivers.find(function (d) { return d.id === id; }); }
+  function mDriver_byName(n) { return DATA.model.drivers.find(function (d) { return d.name === n; }); }
+
+  function renderModel() {
+    var M = DATA.model, host = el("div", "model-wrap");
+
+    // ---- unmissable caveat banner -------------------------------------------
+    var banner = el("div", "model-banner");
+    banner.innerHTML =
+      "<div class='mb-tag'>MODEL · ESTIMATE — not measured fact</div>" +
+      "<div class='mb-what'><b>What this is:</b> an estimate of one-lap <b>qualifying pace relative to teammates</b>, " +
+      "with the car removed, solved from the 1994+ teammate-delta network. The interval is the point.</div>" +
+      "<div class='mb-isnt'><b>What it is NOT:</b> a ranking of greatness, racecraft, wheel-to-wheel ability, " +
+      "championships, wet-weather or tyre management. It is modern-era-weighted: <b>qualifying-time data only exists from 1994</b>.</div>" +
+      "<div class='mb-era'>Drivers whose prime predates 1994 are under-represented — e.g. <b>Senna</b> appears here from just " +
+      "his 3 races in 1994 (±0.64 s, one teammate). An absent or uncertain legend means <i>we cannot measure them</i>, not that they were slow. " +
+      "(Conversely, Schumacher <i>is</i> well covered: 1994–2012, 7 teammates.)</div>";
+    host.appendChild(banner);
+
+    // ---- ranked CI-band chart (rankable only) -------------------------------
+    var rk = M.drivers.filter(function (d) { return d.rankable; })
+                      .sort(function (a, b) { return a.rating - b.rating; });
+    var lo = Math.min.apply(null, rk.map(function (d) { return d.ciLow; })) - 0.05;
+    var hi = Math.max.apply(null, rk.map(function (d) { return d.ciHigh; })) + 0.05;
+    var pct = function (x) { return (100 * (x - lo) / (hi - lo)); };
+
+    host.appendChild(el("h2", "model-h", "Estimated qualifying pace — well-connected drivers " +
+      "<span class='lt-count'>" + rk.length + "</span>"));
+    host.appendChild(el("p", "model-sub",
+      "Seconds vs the field mean, car removed — <b>lower = faster</b>. The bar is the 95% confidence interval; " +
+      "the tick is the point estimate. <b>Bars that overlap are not confidently separable.</b> " +
+      "Only well-connected drivers (≥3 teammates, ≥5 comparisons) are shown here; thin-evidence drivers are below."));
+
+    // axis
+    var axis = el("div", "m-axis");
+    [-1.0, -0.5, 0.0, 0.5].forEach(function (g) {
+      if (g < lo || g > hi) return;
+      var t = el("div", "m-axis-t" + (g === 0 ? " m-axis-zero" : ""));
+      t.style.left = pct(g) + "%";
+      t.innerHTML = "<span>" + (g === 0 ? "field avg" : sgnFix(g).replace(/0+$/, "").replace(/\.$/, "")) + "</span>";
+      axis.appendChild(t);
+    });
+    axis.appendChild(el("div", "m-axis-faster", "◀ faster"));
+    host.appendChild(axis);
+
+    rk.forEach(function (d, i) {
+      var row = el("div", "mrow");
+      var meta = (d.dataFrom === d.dataTo ? d.dataFrom : d.dataFrom + "–" + d.dataTo) +
+                 " · " + d.nTeammates + " tm · " + d.nObs + " obs";
+      var track = "<div class='mtrack'>" +
+        "<div class='mzero' style='left:" + pct(0) + "%'></div>" +
+        "<div class='mband' style='left:" + pct(d.ciLow) + "%;width:" + (pct(d.ciHigh) - pct(d.ciLow)) + "%'></div>" +
+        "<div class='mtick' style='left:" + pct(d.rating) + "%'></div></div>";
+      row.innerHTML =
+        "<div class='mname'><span class='mrank'>" + (i + 1) + "</span> " + esc(d.name) +
+          " <span class='mmeta'>" + meta + "</span></div>" +
+        track +
+        "<div class='mval'>" + sgnFix(d.rating) + " <span class='mci'>±" + d.ci95.toFixed(3) + "</span></div>";
+      row.tabIndex = 0; row.title = "compare " + d.name;
+      host.appendChild(row);
+    });
+
+    // ---- pairwise compare (default: the cross-era tie) ----------------------
+    host.appendChild(el("h2", "model-h", "Compare two drivers"));
+    host.appendChild(el("p", "model-sub",
+      "Pairwise uncertainty uses the <b>effective resistance</b> of the teammate chain linking them: " +
+      "direct, same-era teammates compare tightly; cross-era pairs rest on a long fragile chain and read as a <b>statistical tie</b>."));
+    var cmp = el("div", "mcompare");
+    var optList = rk.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var opts = function (sel) {
+      return optList.map(function (d) {
+        return "<option value='" + d.id + "'" + (d.id === sel ? " selected" : "") + ">" + esc(d.name) + "</option>";
+      }).join("");
+    };
+    var SCH = (mDriver_byName("Michael Schumacher") || {}).id;
+    var VER = (mDriver_byName("Max Verstappen") || {}).id;
+    cmp.innerHTML = "<div class='mc-pick'><select id='cmpA'>" + opts(SCH) + "</select>" +
+      "<span class='mc-vs'>vs</span><select id='cmpB'>" + opts(VER) + "</select></div>" +
+      "<div id='cmpOut'></div>";
+    host.appendChild(cmp);
+
+    function renderCompare() {
+      var a = mDriver(+cmp.querySelector("#cmpA").value);
+      var b = mDriver(+cmp.querySelector("#cmpB").value);
+      var outEl = cmp.querySelector("#cmpOut");
+      if (!a || !b || a.id === b.id) { outEl.innerHTML = "<div class='mc-note'>pick two different drivers</div>"; return; }
+      var key = Math.min(a.id, b.id) + "_" + Math.max(a.id, b.id);
+      var ci = M.pairwise[key];
+      var gap = Math.abs(a.rating - b.rating);
+      var faster = a.rating < b.rating ? a : b;
+      var tie = (ci == null) || (gap < ci);
+      // shared mini scale
+      var clo = Math.min(a.ciLow, b.ciLow) - 0.05, chi = Math.max(a.ciHigh, b.ciHigh) + 0.05;
+      var p = function (x) { return 100 * (x - clo) / (chi - clo); };
+      function bar(d, cls) {
+        return "<div class='mrow mc-row'><div class='mname'>" + esc(d.code || d.name) +
+          " <span class='mmeta'>" + d.dataFrom + "–" + d.dataTo + "</span></div>" +
+          "<div class='mtrack'><div class='mband " + cls + "' style='left:" + p(d.ciLow) + "%;width:" +
+          (p(d.ciHigh) - p(d.ciLow)) + "%'></div><div class='mtick' style='left:" + p(d.rating) + "%'></div></div>" +
+          "<div class='mval'>" + sgnFix(d.rating) + " <span class='mci'>±" + d.ci95.toFixed(3) + "</span></div></div>";
+      }
+      var verdict = tie
+        ? "<span class='mc-tie'>STATISTICAL TIE</span> — the " + gap.toFixed(3) +
+          " s gap is within the <b>±" + (ci != null ? ci.toFixed(3) : "—") +
+          " s</b> uncertainty of this comparison. The model cannot confidently separate them."
+        : "<span class='mc-sep'>" + esc(faster.name) + " estimated faster</span> by " + gap.toFixed(3) +
+          " s — just beyond the ±" + ci.toFixed(3) + " s uncertainty. Still an estimate, not a verdict.";
+      outEl.innerHTML = bar(a, "mc-a") + bar(b, "mc-b") +
+        "<div class='mc-verdict'>" + verdict + "</div>";
+    }
+    cmp.querySelector("#cmpA").addEventListener("change", renderCompare);
+    cmp.querySelector("#cmpB").addEventListener("change", renderCompare);
+    renderCompare();
+
+    // ---- thin-evidence drivers ----------------------------------------------
+    var thin = M.drivers.filter(function (d) { return !d.rankable && d.component === "giant"; })
+                        .sort(function (a, b) { return a.rating - b.rating; });   // fastest-looking first
+    host.appendChild(el("h2", "model-h", "Thin evidence — wide uncertainty " +
+      "<span class='lt-count'>" + thin.length + "</span>"));
+    host.appendChild(el("p", "model-sub",
+      "Few teammates, few comparisons, or a single old season — <b>not confidently rankable</b>. Shown by " +
+      "fastest point estimate first to make the danger obvious: e.g. <b>Senna</b> tops it on paper, but the " +
+      "<b>±0.64 s</b> interval (3 races, 1994) means the point estimate can't be trusted. Wide bars are the warning."));
+    var tt = el("table", "lt lt-dim");
+    tt.innerHTML = "<thead><tr><th>driver</th><th>data</th><th class='lt-r'>estimate</th>" +
+      "<th class='lt-r'>95% CI</th><th class='lt-r'>teammates</th></tr></thead>";
+    var ttb = el("tbody");
+    thin.slice(0, 30).forEach(function (d) {
+      var tr = el("tr");
+      tr.innerHTML = "<td class='lt-name'>" + esc(d.name) + "</td>" +
+        "<td class='lt-them num'>" + (d.dataFrom === d.dataTo ? d.dataFrom : d.dataFrom + "–" + d.dataTo) + "</td>" +
+        "<td class='lt-r num'>" + sgnFix(d.rating) + "</td>" +
+        "<td class='lt-r'><span class='mci-wide'>±" + (d.ci95 != null ? d.ci95.toFixed(3) : "—") + "</span></td>" +
+        "<td class='lt-r num'>" + d.nTeammates + "</td>";
+      ttb.appendChild(tr);
+    });
+    tt.appendChild(ttb); host.appendChild(tt);
+
+    // ---- how it works / limitations -----------------------------------------
+    var how = el("details", "model-how");
+    how.innerHTML =
+      "<summary>How this works &amp; its limitations</summary>" +
+      "<div class='mh-body'>" +
+      "<p><b>Method.</b> The only car-controlled comparison is teammates (same car, same season). Each Phase&nbsp;D Tier-1 " +
+      "qualifying delta becomes an edge in a network of drivers; we solve all edges at once by weighted least squares " +
+      "(a chained comparison: A&gt;B, B&gt;C ⇒ A&gt;C) for the driver-pace numbers that best explain every teammate gap. " +
+      "Inputs are read from the validated Phase&nbsp;D artifacts — nothing here is re-measured.</p>" +
+      "<p><b>Why cross-era is uncertain.</b> Two drivers who never shared a garage are only linked through a chain of " +
+      "teammates-of-teammates. Confidence collapses along long, weak chains (formally, the <i>effective resistance</i> of the " +
+      "network path). That is why a 1990s–vs–2020s comparison shows a wide interval and usually a statistical tie.</p>" +
+      "<p><b>What the interval means.</b> A 95% confidence range from propagating the measurement noise through the network. " +
+      "The career-average simplification leaves real scatter (σ̂²≈" + M.meta.sigma2 + "), and we widen every interval " +
+      "to reflect it. Overlapping intervals = not confidently separable.</p>" +
+      "<p><b>Scope.</b> " + M.meta.nDrivers + " drivers, " + M.meta.nEdges + " teammate-delta edges, " +
+      M.meta.eraFrom + "–" + M.meta.eraTo + ". Reconstruction median residual " + M.meta.medianResidual + " s. " +
+      "This estimates qualifying pace only — not racecraft, not greatness.</p>" +
+      "</div>";
+    host.appendChild(how);
+    return host;
+  }
+
   var VIEWS = {
     "#/beaten":  { tab: "#/beaten",  title: "Champions beaten by their teammate",
                    sub: "The 2016 Rosberg anomaly, generalised across 75 seasons.", render: renderBeaten },
@@ -501,6 +664,9 @@
                    sub: "Titles secured with the most races to spare.", render: renderClinch },
     "#/pace":    { tab: "#/pace",    title: "Teammate pace gaps",
                    sub: "Tenths-level measured deltas, same car (Phase D). Tiers visible.", render: renderPace },
+    "#/model":   { tab: "#/model",   title: "Driver pace model",
+                   sub: "ESTIMATE — car-normalised qualifying pace, with uncertainty (Phase E).",
+                   render: renderModel, model: true },
   };
 
   /* ====================================================================== */
@@ -532,12 +698,14 @@
       $("list-sub").textContent = v.sub;
       var body = $("list-body"); body.innerHTML = "";
       body.appendChild(v.render());
-      $("ro-gap").textContent = h.replace("#/", "").toUpperCase();
+      document.body.classList.toggle("is-model", !!v.model);   // distinct treatment for the estimate view
+      $("ro-gap").textContent = v.model ? "MODEL · EST" : h.replace("#/", "").toUpperCase();
       window.scrollTo(0, 0);
     } else {
       var yr = sm ? +sm[1] : (byYear[+(h.replace(/[^\d]/g, ""))] ? +(h.replace(/[^\d]/g, "")) : 2008);
       showSeasonView(true);
       setActiveTab("#/");
+      document.body.classList.remove("is-model");
       renderSeason(yr);
       if (sm) window.scrollTo(0, 0);
     }
