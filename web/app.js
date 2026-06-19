@@ -801,8 +801,9 @@
   function renderQuality() {
     var Q = DATA.quality, Z = Q.z95, host = el("div", "model-wrap qual-wrap");
     var AX = Q.axes, AXKEY = ["pace", "racecraft", "longevity"], AXSHORT = ["PACE", "CRAFT", "LONG"];
-    var W = [34, 33, 33];               // pace / racecraft / longevity, equal default (arbitrary)
+    var W = (Q.defaultWeights || [34, 33, 33]).slice();   // racecraft de-emphasised by default (weak axis)
     var MODE = "cross";                 // "cross" (absolute) | "within" (peers)
+    var WEAK = AX.map(function (a) { return !!a.weak; }); // weakly-identified axes (racecraft)
 
     // ---- caveat banner ------------------------------------------------------
     var banner = el("div", "model-banner");
@@ -811,12 +812,14 @@
       "<div class='mb-what'><b>There is no correct weighting.</b> The model measures three " +
       "<b>orthogonal</b> axes — pace, racecraft, longevity — each with its own uncertainty. <b>You</b> " +
       "decide how much each counts. Equal is an arbitrary starting point, not a claim.</div>" +
-      "<div class='mb-isnt'><b>Interval-aware:</b> a noisy estimate (thin-data early-era racecraft) is " +
-      "shrunk toward neutral so it can't masquerade as signal — era-neutral, and the real " +
-      "<b>field-compression</b> pace gradient (1990s grids were genuinely more spread out) is kept, not erased.</div>" +
+      "<div class='mb-isnt'><b>Racecraft is weakly identified.</b> It measures finishing conversion beyond " +
+      "<i>both</i> pace and starting grid — but in teammate data the grid gap ≈ the pace gap (the faster " +
+      "teammate qualifies ahead), so once both are removed almost no separable signal survives. The axis is " +
+      "therefore <b>shrunk to ~0 with wide intervals</b> and defaulted to a low weight: it is shown honestly, " +
+      "not presented as co-equal measured skill.</div>" +
       "<div class='mb-era'>Covers the <b>" + Q.refN + " genuine careers (≥4 seasons, all three axes)</b> of the " +
-      "qualifying-timed era (1994+). Pre-1994 primes are out of scope — absent ≠ weak. Longevity is the softest " +
-      "axis; weight it to zero if you don't buy it.</div>";
+      "qualifying-timed era (1994+). Pre-1994 primes are out of scope — absent ≠ weak. Longevity is sqrt-scaled " +
+      "(skew) and is the softest of the two live axes; weight it to zero if you don't buy it.</div>";
     host.appendChild(banner);
 
     // ---- weight sliders -----------------------------------------------------
@@ -824,9 +827,11 @@
     ctrl.appendChild(el("div", "qctrl-h", "YOUR WEIGHTS <span class='qctrl-sub'>— drag to decide what matters; they renormalise to 100%</span>"));
     var sliders = el("div", "qsliders");
     AX.forEach(function (a, i) {
-      var row = el("div", "qsl qsl-" + a.key);
+      var row = el("div", "qsl qsl-" + a.key + (a.weak ? " qsl-weak" : ""));
       row.innerHTML =
-        "<label class='qsl-lab'>" + esc(a.label) + " <span class='qsl-unit'>" + esc(a.unit) + "</span></label>" +
+        "<label class='qsl-lab'>" + esc(a.label) +
+          (a.weak ? " <span class='qsl-weakflag' title='in teammate data grid ≈ pace, so little separable racecraft signal survives'>weakly identified</span>" : "") +
+          " <span class='qsl-unit'>" + esc(a.unit) + "</span></label>" +
         "<input type='range' min='0' max='100' value='" + W[i] + "' class='qsl-range' data-ax='" + i + "'>" +
         "<span class='qsl-pct'>33%</span>" +
         "<div class='qsl-note'>" + esc(a.note) + "</div>";
@@ -943,7 +948,8 @@
         var e = P(ZMAX, i);
         s += "<line x1='" + c + "' y1='" + c + "' x2='" + e[0] + "' y2='" + e[1] + "' class='qrad-spoke'/>";
         var L = P(ZMAX + 0.55, i);
-        s += "<text x='" + L[0] + "' y='" + L[1] + "' class='qrad-lab qrad-lab-" + AXKEY[i] + "'>" + AXSHORT[i] + "</text>";
+        s += "<text x='" + L[0] + "' y='" + L[1] + "' class='qrad-lab qrad-lab-" + AXKEY[i] +
+          (WEAK[i] ? " qrad-lab-weak" : "") + "'>" + AXSHORT[i] + (WEAK[i] ? " ⚠" : "") + "</text>";
       });
       // driver polygons
       entries.forEach(function (e, k) {
@@ -1013,9 +1019,14 @@
       "is z-scored against the " + Q.refN + " genuine ≥4-season careers — mean 0, sd 1, higher = better.</p>" +
       "<p><b>Interval-aware shrinkage (empirical Bayes).</b> Each axis estimate is pulled toward neutral in " +
       "proportion to its uncertainty (τ²: pace " + Q.tau2.cross.pace + ", racecraft " + Q.tau2.cross.race +
-      ", longevity " + Q.tau2.cross.long + " — lower = more shrink). Racecraft is the noisy axis, so it shrinks " +
-      "most; pace barely moves. This kills noise-as-signal era-neutrally — and a globally noisier axis " +
-      "(racecraft) therefore carries marginally less effect for a given slider %, which is honest.</p>" +
+      ", longevity " + Q.tau2.cross.long + " — lower = more shrink). Pace barely moves; longevity barely moves.</p>" +
+      "<p><b>Why racecraft is weakly identified (the honest limit).</b> Racecraft is the residual of teammate " +
+      "finishing conversion after removing <i>both</i> pace and <b>starting grid</b> (positions gained on the " +
+      "teammate vs the grid gap — so a pole-sitter who holds station isn't penalised for positions they could " +
+      "never gain). But in teammate data the grid gap ≈ the pace gap, so once both are removed the residual is " +
+      "statistically indistinguishable from noise (τ²≈0) for all but ~3 drivers. We do <b>not</b> manufacture a " +
+      "signal: the axis is shrunk to ~0 with wide intervals and defaulted to a low weight. Honest finding — the " +
+      "old finishing-margin racecraft was, in large part, measuring grid opportunity.</p>" +
       "<p><b>Cross-era vs within-era.</b> <i>Cross-era</i> (default) scores everyone against one spine, keeping the " +
       "real field-compression gradient (1990s grids were more spread). <i>Within-era</i> scores you against your " +
       "contemporaries, flattening each era — useful, but it assumes equal era depth, so it's a choice, not the truth.</p>" +

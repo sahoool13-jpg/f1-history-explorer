@@ -38,14 +38,21 @@ intervals wider. Ratings are ESTIMATES (is_estimate kept separate).
 ================================ METHOD (exact) ==============================
 
 PER PAIR-SEASON (same car, ordered driverA<driverB):
-  finish_margin = mean over eligible races of clip(pos_B - pos_A, -CAP, +CAP)
-                  (driver A ahead => positive; a solo DNF scores -CAP for the
-                   retiree vs a classified teammate).
+  conv_margin = mean over eligible races of clip((pos_B-pos_A) - (grid_B-grid_A), -CAP, +CAP)
+                  -- GRID-CONDITIONED conversion: positions A gained on B from grid to flag
+                  (A ahead beyond grid => positive). Holding station reads ~0, so a dominant
+                  front-runner is no longer censored for positions they could never gain. A
+                  solo DNF scores -CAP; no-grid (pit-lane) races are dropped, not guessed.
   pace_pred_margin = b_q*(-quali_delta) + b_rp*(-racepace_delta) + c, where
-                  (b_q, b_rp, c) come from ONE OLS fit of finish_margin on the two
-                  pace deltas across all pairs that have both (negative delta = A
-                  faster => predicts A ahead).
-  racecraft_residual = finish_margin - pace_pred_margin.   <-- the orthogonal signal
+                  (b_q, b_rp, c) come from ONE OLS fit of conv_margin on the two pace deltas
+                  across all pairs that have both (negative delta = A faster => predicts A
+                  ahead).
+  racecraft_residual = conv_margin - pace_pred_margin.   <-- grid-conditioned & pace-orthogonal
+
+  WHY THIS AXIS IS WEAK BY CONSTRUCTION: in teammate data the grid gap is essentially the
+  pace (quali) gap -- the faster teammate qualifies ahead -- so once BOTH pace and grid are
+  removed, the residual "pure conversion" signal is small and noisy. This is honest: the old
+  finishing-margin racecraft was, in large part, measuring grid opportunity. See the gate.
 
 DRIVER-LEVEL NETWORK (racecraft is sparse — career nodes, not driver-seasons):
   nodes = drivers; one edge per pair-season with target = racecraft_residual and
@@ -88,20 +95,32 @@ def _era_third(season):
     return 0 if season <= ERA_CUTS[0] else (1 if season <= ERA_CUTS[1] else 2)
 
 
-def _pair_margins(con):
-    """Per pair-season: mean luck-excluded finishing margin (A ahead positive),
-    number of eligible races, and number of races dropped as luck/ambiguous."""
-    rows = con.execute("""SELECT raceId, season, constructorId, driverId, position_order, status
+def _pair_margins(con, conversion=True):
+    """Per pair-season: mean luck-excluded GRID-CONDITIONED conversion margin
+    (driver A gaining on teammate B beyond the grid gap), eligible-race count, and the
+    number of races dropped as luck/ambiguous/no-grid.
+
+    Racecraft must not reward grid opportunity. A dominant front-runner out-qualifies
+    their teammate hugely, but finishing positions SATURATE at the front, so a single
+    pace->finishing-margin fit over-predicts their margin (no positions left to gain) and
+    scores them negative. We instead use CONVERSION = (finish_gap - grid_gap): the
+    positions A actually gained on B from lights to flag. Holding station (the expectation
+    from the front) reads ~0, so the front-runner is no longer censored; genuine overtaking
+    still counts. Conditions on the starting grid; still pace-orthogonal (pace is regressed
+    out later). Races with no grid (pit-lane start) are dropped, not guessed; a solo DNF is
+    a full racecraft loss (-CAP).
+    """
+    rows = con.execute("""SELECT raceId, season, constructorId, driverId, grid, position_order, status
                           FROM fact_results""").fetchall()
     byrc = defaultdict(list)
-    for raceId, season, cid, did, po, st in rows:
-        byrc[(raceId, cid)].append((season, did, po, st))
-    margins = defaultdict(list)      # (season,a,b) -> [per-race margin, A perspective]
-    dropped = defaultdict(int)       # (season,a,b) -> n races dropped (luck/ambiguous)
+    for raceId, season, cid, did, grid, po, st in rows:
+        byrc[(raceId, cid)].append((season, did, grid, po, st))
+    margins = defaultdict(list)      # (season,a,b) -> [per-race conversion margin, A perspective]
+    dropped = defaultdict(int)       # (season,a,b) -> n races dropped (luck/ambiguous/no-grid)
     for (raceId, cid), lst in byrc.items():
         if len(lst) != 2:            # only genuine two-car pairings
             continue
-        (s1, d1, p1, st1), (s2, d2, p2, st2) = lst
+        (s1, d1, g1, p1, st1), (s2, d2, g2, p2, st2) = lst
         a, b = (d1, d2) if d1 < d2 else (d2, d1)
         key = (s1, a, b)
 
@@ -116,8 +135,15 @@ def _pair_margins(con):
             dropped[key] += 1        # mechanical/ambiguous, or both crashed: not racecraft
             continue
         if c1[0] == "F" and c2[0] == "F":
-            m = float(np.clip(p2 - p1, -CAP, CAP))
-        elif c1[0] == "E":           # d1 solo error, d2 classified
+            if not conversion:                   # OLD metric: raw finishing-position margin
+                m = float(np.clip(p2 - p1, -CAP, CAP))
+            else:
+                if g1 <= 0 or g2 <= 0:           # pit-lane / no-grid: cannot grid-condition
+                    dropped[key] += 1
+                    continue
+                conv = (p2 - p1) - (g2 - g1)     # d1-perspective: positions d1 gained vs grid
+                m = float(np.clip(conv, -CAP, CAP))
+        elif c1[0] == "E":           # d1 solo error, d2 classified -> full racecraft loss
             m = -CAP
         else:                        # d2 solo error, d1 classified
             m = CAP
@@ -125,8 +151,8 @@ def _pair_margins(con):
     return margins, dropped
 
 
-def compute(con):
-    margins, dropped = _pair_margins(con)
+def compute(con, conversion=True):
+    margins, dropped = _pair_margins(con, conversion)
     qd = {(s, a, b): med for s, a, b, med in con.execute(
         "SELECT season,driverA,driverB,median_gap_s FROM quali_teammate_delta_pairseason "
         "WHERE median_gap_s IS NOT NULL").fetchall()}
@@ -222,8 +248,8 @@ def compute(con):
                 seasons_by_driver=seasons_by_driver, dropped=dropped, qd=qd, rp=rp)
 
 
-def build(con):
-    H = compute(con)
+def build(con, conversion=True):
+    H = compute(con, conversion)
     name = dict(con.execute("SELECT driverId, full_name FROM dim_drivers").fetchall())
     code = dict(con.execute("SELECT driverId, code FROM dim_drivers").fetchall())
     r, Rbb, era_ci = H["r"], H["Rbb"], H["era_ci"]

@@ -612,6 +612,10 @@ body.is-model .legend { display: none; }
 .qsl-pct { grid-area: pct; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px;
   color: var(--model); }
 .qsl-note { grid-area: note; font-size: 10.5px; color: var(--ink-dim); line-height: 1.4; }
+.qsl-weakflag { font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t-red, #ff6b6b);
+  border: 1px solid currentColor; border-radius: 2px; padding: 0 4px; vertical-align: middle; }
+.qsl-weak .qsl-lab { opacity: .85; }
+.qrad-lab-weak { fill: var(--t-red, #ff6b6b) !important; opacity: .9; }
 .qsl-pace .qsl-range::-webkit-slider-thumb { background: var(--amber); }
 .qsl-pace .qsl-range::-moz-range-thumb { background: var(--amber); }
 .qsl-pace .qsl-pct { color: var(--amber); }
