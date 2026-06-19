@@ -795,6 +795,209 @@
     return host;
   }
 
+  /* ====================================================================== */
+  /*  PHASE J — COMPOSITE QUALITY (user-weighted, no fixed ranking)          */
+  /* ====================================================================== */
+  function renderQuality() {
+    var Q = DATA.quality, Z = Q.z95, host = el("div", "model-wrap qual-wrap");
+    var AX = Q.axes, AXKEY = ["pace", "racecraft", "longevity"];
+    var W = [34, 33, 33];               // pace / racecraft / longevity, equal default (arbitrary)
+
+    // ---- caveat banner ------------------------------------------------------
+    var banner = el("div", "model-banner");
+    banner.innerHTML =
+      "<div class='mb-tag'>MODEL · ESTIMATE — YOUR weighting, not an official ranking</div>" +
+      "<div class='mb-what'><b>There is no correct weighting.</b> The model measures three " +
+      "<b>orthogonal</b> axes — pace, racecraft, longevity — each honestly, with its own uncertainty. " +
+      "<b>You</b> decide how much each counts. The equal default below is an arbitrary starting point, " +
+      "<i>not</i> a claim about what matters.</div>" +
+      "<div class='mb-isnt'><b>What it is NOT:</b> a definitive greatest-of-all-time list. Move the sliders and " +
+      "the ranking changes — that is the point. Where two drivers' intervals overlap they are <b>not confidently " +
+      "separable</b>, and the list says so rather than inventing an order.</div>" +
+      "<div class='mb-era'>Covers the <b>" + Q.refN + " genuine careers (≥4 seasons, all three axes)</b> of the " +
+      "qualifying-timed era (1994+). Pre-1994 primes are out of scope — absent ≠ weak. Longevity is the softest, " +
+      "most constructed axis; if you don't buy it, weight it to zero.</div>";
+    host.appendChild(banner);
+
+    // ---- weight sliders -----------------------------------------------------
+    var ctrl = el("div", "qctrl");
+    ctrl.appendChild(el("div", "qctrl-h", "YOUR WEIGHTS <span class='qctrl-sub'>— drag to decide what matters; they renormalise to 100%</span>"));
+    var sliders = el("div", "qsliders");
+    AX.forEach(function (a, i) {
+      var row = el("div", "qsl qsl-" + a.key);
+      row.innerHTML =
+        "<label class='qsl-lab'>" + esc(a.label) + " <span class='qsl-unit'>" + esc(a.unit) + "</span></label>" +
+        "<input type='range' min='0' max='100' value='" + W[i] + "' class='qsl-range' data-ax='" + i + "'>" +
+        "<span class='qsl-pct' data-pct='" + i + "'>33%</span>" +
+        "<div class='qsl-note'>" + esc(a.note) + "</div>";
+      sliders.appendChild(row);
+    });
+    ctrl.appendChild(sliders);
+    var presets = el("div", "qpresets");
+    presets.innerHTML = "<span class='qp-lab'>presets:</span>";
+    [["equal", [34, 33, 33]], ["pace-only", [100, 0, 0]], ["racecraft-led", [25, 60, 15]],
+     ["longevity-led", [25, 15, 60]]].forEach(function (p) {
+      var b = el("button", "qp-btn", p[0]); b.dataset.w = p[1].join(","); presets.appendChild(b);
+    });
+    ctrl.appendChild(presets);
+    host.appendChild(ctrl);
+
+    host.appendChild(el("p", "model-sub qnote",
+      "Each bar is the <b>95% interval</b>; the tick is the point estimate. <b>Overlapping bars are not " +
+      "confidently separable</b> — under balanced weighting almost every <i>adjacent</i> pair is a statistical " +
+      "tie (marked <span class='qtie'>≈</span>), which is the honest result, not a glitch. Distinctions are real " +
+      "only between drivers several places apart — use <b>Compare</b> below for a definite verdict on any pair."));
+
+    var rankBox = el("div", "qrank");
+    host.appendChild(rankBox);
+
+    var LAST = {};   // name -> {c, ci} under the current weighting (for the compare tool)
+
+    // ---- compute + render ---------------------------------------------------
+    function recompute() {
+      var sum = W[0] + W[1] + W[2] || 1;
+      var w = [W[0] / sum, W[1] / sum, W[2] / sum];
+      AX.forEach(function (a, i) { $("qpct" + i).textContent = Math.round(100 * w[i]) + "%"; });
+
+      var rows = Q.drivers.map(function (d) {
+        var c = w[0] * d.z[0] + w[1] * d.z[1] + w[2] * d.z[2];
+        var ci = Z * Math.sqrt(Math.pow(w[0] * d.sz[0], 2) + Math.pow(w[1] * d.sz[1], 2) + Math.pow(w[2] * d.sz[2], 2));
+        return { d: d, c: c, ci: ci, contrib: [w[0] * d.z[0], w[1] * d.z[1], w[2] * d.z[2]] };
+      }).sort(function (a, b) { return b.c - a.c; });
+
+      LAST = {};
+      rows.forEach(function (r) { LAST[r.d.name] = { c: r.c, ci: r.ci }; });
+
+      var lo = Math.min.apply(null, rows.map(function (r) { return r.c - r.ci; })) - 0.1;
+      var hi = Math.max.apply(null, rows.map(function (r) { return r.c + r.ci; })) + 0.1;
+      var pct = function (x) { return 100 * (x - lo) / (hi - lo); };
+
+      rankBox.innerHTML = "";
+      var head = el("div", "qr-head");
+      head.innerHTML = "<span class='qr-rank'>#</span><span class='qr-name'>driver</span>" +
+        "<span class='qr-bar'>composite — weighted z-score, ▏95% interval &nbsp; <b>overlap ⇒ tie</b></span>" +
+        "<span class='qr-ax'>pace</span><span class='qr-ax'>craft</span><span class='qr-ax'>long</span>";
+      rankBox.appendChild(head);
+
+      // zero line marker
+      rows.forEach(function (r, i) {
+        var prev = rows[i - 1];
+        var tied = prev && (r.c + r.ci >= prev.c - prev.ci);   // interval overlaps the driver above
+        var row = el("div", "qrow" + (tied ? " qrow-tie" : ""));
+        var bar = "<div class='qtrack'>" +
+          "<div class='qzero' style='left:" + pct(0) + "%'></div>" +
+          "<div class='qband' style='left:" + pct(r.c - r.ci) + "%;width:" + (pct(r.c + r.ci) - pct(r.c - r.ci)) + "%'></div>" +
+          "<div class='qtick' style='left:" + pct(r.c) + "%'></div></div>";
+        var cells = r.d.z.map(function (zv, k) {
+          var sign = zv >= 0 ? "pos" : "neg";
+          return "<span class='qcell qcell-" + AXKEY[k] + " qcell-" + sign + "' title='" +
+            AX[k].label + " z = " + zv.toFixed(2) + " (raw " + r.d.raw[k] + ")'>" + sgn1(zv) + "</span>";
+        }).join("");
+        row.innerHTML =
+          "<span class='qr-rank'>" + (tied ? "<span class='qtie' title='interval overlaps the driver above — not confidently separable'>≈</span>" : "") + (i + 1) + "</span>" +
+          "<span class='qr-name'>" + esc(r.d.name) + (r.d.active ? " <span class='qactive' title='still racing — longevity is so-far'>•</span>" : "") +
+            " <span class='qns'>" + r.d.nSeasons + "y</span></span>" +
+          "<span class='qr-bar'>" + bar + "<span class='qval'>" + sgn1(r.c) + " <span class='qci'>±" + r.ci.toFixed(2) + "</span></span></span>" +
+          cells;
+        rankBox.appendChild(row);
+      });
+    }
+
+    function sgn1(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2); }
+
+    // ---- pairwise compare (explicit tie / separable verdict) ----------------
+    var cmp = el("div", "qcompare");
+    var names = Q.drivers.map(function (d) { return d.name; }).sort();
+    var opt = function (sel) {
+      return names.map(function (n) {
+        return "<option" + (n === sel ? " selected" : "") + ">" + esc(n) + "</option>";
+      }).join("");
+    };
+    cmp.innerHTML = "<div class='qc-h'>COMPARE — is the gap real under your weights?</div>" +
+      "<div class='qc-pick'><select id='qcA'>" + opt("Fernando Alonso") + "</select>" +
+      "<span class='qc-vs'>vs</span><select id='qcB'>" + opt("Antonio Giovinazzi") + "</select></div>" +
+      "<div id='qcOut' class='qc-out'></div>";
+
+    function renderCompare() {
+      var a = LAST[$("qcA").value], b = LAST[$("qcB").value];
+      if (!a || !b) return;
+      var hi = a.c >= b.c ? { n: $("qcA").value, v: a } : { n: $("qcB").value, v: b };
+      var loD = a.c >= b.c ? { n: $("qcB").value, v: b } : { n: $("qcA").value, v: a };
+      var gap = hi.v.c - loD.v.c;
+      var sep = (hi.v.c - hi.v.ci) > (loD.v.c + loD.v.ci);   // intervals clear of each other
+      var out = $("qcOut");
+      if ($("qcA").value === $("qcB").value) { out.className = "qc-out"; out.innerHTML = "<span class='qc-tie'>same driver</span>"; return; }
+      out.className = "qc-out " + (sep ? "qc-sep" : "qc-tie-out");
+      out.innerHTML = sep
+        ? "<b>" + esc(hi.n) + "</b> is clearly ahead — composite gap <b>" + gap.toFixed(2) +
+          "</b>, intervals do not overlap. A real separation under this weighting."
+        : "<span class='qc-tie'>statistical tie</span> — gap " + gap.toFixed(2) +
+          " but the 95% intervals overlap (" + esc(hi.n) + " ±" + hi.v.ci.toFixed(2) + ", " +
+          esc(loD.n) + " ±" + loD.v.ci.toFixed(2) + "). Not confidently separable; don't read the order.";
+    }
+
+    // ---- partial-coverage section -------------------------------------------
+    if (Q.partial && Q.partial.length) {
+      var part = el("details", "qpartial");
+      var lis = Q.partial.map(function (p) {
+        var why = /short-career/.test(p.missing) ? "short career (&lt;4 seasons)" :
+          (!p.has[1] ? "no racecraft axis (pre-clean-lap data)" : "missing an axis");
+        return "<li><b>" + esc(p.name) + "</b> <span class='qp-ns'>" + p.nSeasons + "y</span> — " + why + "</li>";
+      }).join("");
+      part.innerHTML = "<summary>Partial coverage — " + Q.partial.length +
+        " drivers excluded from the composite (flagged, never zero-filled)</summary>" +
+        "<div class='qp-body'><p>The composite needs all three axes and a genuine (≥4-season) career. " +
+        "These drivers are missing one or the other, so they are <b>shown here, not ranked</b> — a blank axis is " +
+        "not a zero.</p><ul class='qp-list'>" + lis + "</ul></div>";
+    }
+
+    // ---- how it works -------------------------------------------------------
+    var how = el("details", "model-how");
+    how.innerHTML =
+      "<summary>How the composite works &amp; why there is no official ranking</summary>" +
+      "<div class='mh-body'>" +
+      "<p><b>Three axes, normalised.</b> Pace (G, seconds vs the era backbone), racecraft (H, positions vs what pace " +
+      "predicts) and longevity (I, effective competitive seasons) live on different scales. Each is <b>z-scored</b> " +
+      "against the same reference population — the " + Q.refN + " genuine ≥4-season careers — so all three become " +
+      "mean-0, sd-1, oriented so higher = better.</p>" +
+      "<p><b>The composite is yours.</b> composite = w·z, with weights you set (renormalised to sum 1). We ship no " +
+      "fixed weights because there is no measurable 'right' answer to how much racecraft is worth a tenth of pace. " +
+      "The equal default is a starting point, not a verdict.</p>" +
+      "<p><b>Uncertainty propagates.</b> Each axis carries a 95% interval; the composite interval combines them " +
+      "(√Σ(w·σ)², the axes being orthogonal). When two drivers' intervals overlap they are marked <b>≈</b> — not " +
+      "confidently separable. A weighting that looks decisive on the points alone is often a statistical tie.</p>" +
+      "<p><b>Always decomposable.</b> Every row shows its three axis z-scores, so a position is never a black box. " +
+      "Inputs trace to the validated Phase G/H/I artifacts; nothing here is re-measured. Estimates throughout.</p>" +
+      "</div>";
+
+    // give the % spans stable ids before first recompute()
+    var pcts = ctrl.querySelectorAll(".qsl-pct");
+    for (var i = 0; i < pcts.length; i++) pcts[i].id = "qpct" + i;
+
+    // wire events
+    ctrl.addEventListener("input", function (e) {
+      var ax = e.target.getAttribute("data-ax");
+      if (ax == null) return;
+      W[+ax] = +e.target.value; recompute(); renderCompare();
+    });
+    presets.addEventListener("click", function (e) {
+      if (!e.target.dataset.w) return;
+      W = e.target.dataset.w.split(",").map(Number);
+      var ranges = ctrl.querySelectorAll(".qsl-range");
+      for (var i = 0; i < ranges.length; i++) ranges[i].value = W[i];
+      recompute(); renderCompare();
+    });
+    cmp.addEventListener("change", renderCompare);
+
+    recompute();
+    host.appendChild(el("div", "model-divider", "Compare two drivers under your weighting"));
+    host.appendChild(cmp);
+    renderCompare();
+    if (part) host.appendChild(part);
+    host.appendChild(how);
+    return host;
+  }
+
   var VIEWS = {
     "#/beaten":  { tab: "#/beaten",  title: "Champions beaten by their teammate",
                    sub: "The 2016 Rosberg anomaly, generalised across 75 seasons.", render: renderBeaten },
@@ -809,6 +1012,9 @@
     "#/model":   { tab: "#/model",   title: "Driver pace model",
                    sub: "ESTIMATE — car-normalised qualifying pace, with uncertainty (Phase E).",
                    render: renderModel, model: true },
+    "#/quality": { tab: "#/quality", title: "Driver quality — your weighting",
+                   sub: "ESTIMATE — three orthogonal axes (pace · racecraft · longevity). You set the weights.",
+                   render: renderQuality, model: true },
   };
 
   /* ====================================================================== */

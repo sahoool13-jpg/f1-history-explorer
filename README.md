@@ -3,7 +3,7 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
-## Status: Phases A–I ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity)
+## Status: Phases A–J ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity · user-weighted composite)
 
 Phase A is **ingest + a validated relational base + the factual teammate
 head-to-head spine** only. No rankings, no Elo, no car-normalisation, no UI —
@@ -840,4 +840,67 @@ construction band + mean competitiveness + active flag), `longevity_season_weigh
 driver-seasons; the per-season presence × competitiveness audit trail). All
 `is_estimate=1`, separate from measured results. No UI this phase (combination = Phase J,
 presentation = Phase K).
+
+# Phase J — combination + USER-WEIGHTING ⚠️ ESTIMATE · interactive
+
+The three axes are measured honestly and **orthogonally** — pace (G), racecraft (H),
+longevity (I). Phase J combines them into a composite **without asserting a single
+weighting**. The whole model's defensibility rests here: *the model measures the axes;
+the **user** decides how much each counts.* There is no official ranking — the composite
+is a function of user-set weights, and the equal default is an arbitrary starting point,
+explicitly not a claim.
+
+Run: `python3 pipeline/run_phase_j.py` → **Phase J gate: 13 PASS / 0 FAIL**. The
+interactive view ships this phase at **`#/quality`** (regenerate `web/data.js` with
+`python3 pipeline/export_web.py`).
+
+## Method — normalise, then weight (live)
+
+- **Reference population** — the **63 genuine careers** (≥4 seasons, all three axes) of the
+  1994+ era. Cameos would distort the spread, so they are excluded from the normalisation.
+- **Normalise** — each axis is **z-scored** against that population (mean 0, sd 1), oriented
+  so higher = better. Career pace = inverse-variance weighted mean of a driver's Phase-G
+  season ratings.
+- **Composite** — `composite = w_pace·z_pace + w_race·z_race + w_long·z_long`, weights
+  user-set and renormalised to sum 1. Default **equal** (labelled arbitrary).
+- **Uncertainty propagates** — each axis CI goes onto the z scale; the axes are orthogonal,
+  so `σ_composite = √Σ(w·σ_z)²`. Overlapping composite intervals read as **"not confidently
+  separable"** — the list marks adjacent ties (≈) and a **Compare** tool gives an explicit
+  tie/separable verdict for any pair.
+- **Coverage** — a full composite needs all three axes **and** a genuine career; everyone
+  else is flagged **partial** (missing axis named), never zero-filled or silently dropped.
+
+## Phase J gate (13 PASS / 0 FAIL)
+
+| Check | Result |
+|-------|--------|
+| **No fixed weighting**: balanced / pace-heavy / racecraft-heavy give **different** top-10s (Δ 2 and 10 members) — the composite genuinely responds to the user | PASS |
+| **THE GIOVINAZZI TEST**: rank of 63 — **pace-ONLY #14**, **balanced #47**, **racecraft-heavy #56**. Pure pace flatters him; the full picture sinks him. *"Decent qualifier, little else"* — shown by the weighting, not asserted | PASS |
+| **Uncertainty**: under racecraft-heavy, high-CI Alesi (+2.01 ±1.93) floats to nominal #1 but its interval overlaps **49** drivers → not separable; balanced #1/#2 (Alonso/Schumacher) overlap and are marked tied | PASS |
+| **Sanity**: balanced top-8 = Alonso, Schumacher, Hamilton, Verstappen, Barrichello, Leclerc, Sainz, Button — all four of {Alonso, Hamilton, Schumacher, Verstappen} present, median CI ±0.28 (not uncertainty artifacts) | PASS |
+| **Coverage**: 109 partial drivers flagged & excluded (not zero-filled); every partial names its missing axis | PASS |
+| **Transparency**: every composite decomposes into its three axis z-scores (no black box); `is_estimate=1` | PASS |
+
+**The thesis in one line:** weight pace alone and Giovinazzi is a respectable #14; add the
+racecraft and longevity the model also measures, and he falls to #47 → #56. The full
+picture sinks him — *exactly what the three-axis model was built to show* — and it does so
+by your own weighting, not ours.
+
+**The interactive view (`#/quality`).** Three sliders (pace · racecraft · longevity) recompute
+the ranking live; presets (equal / pace-only / racecraft-led / longevity-led) jump to corners.
+Every row shows its composite 95% interval **and** its three axis z-scores (always
+decomposable). Adjacent statistical ties are marked **≈** — under balanced weighting almost
+every neighbour is a tie, which is the honest result; the **Compare** tool resolves any
+specific pair (e.g. Alonso vs Giovinazzi → *clearly separable, gap 2.24*; Alonso vs
+Schumacher → *statistical tie*). A partial-coverage panel lists who's excluded and why.
+
+**Honesty caveats carried through:** the composite is an **estimate** built on estimates; it
+covers only the 1994+ all-three-axis careers; longevity is the softest axis and may be
+weighted to **zero**; and a high rank with a wide interval is *not* a confident claim — the
+view says so. *(The combination logic is validated in Python; the live in-browser render
+wants an eyeball.)*
+
+Artifacts: `driver_quality_axes` (172 drivers; raw + z-scored axes + z-scale CIs + coverage
+flags), `quality_norm_meta` (per-axis reference mean/std/population). Web: `quality` block in
+`web/data.js`. All `is_estimate=1`. Full radar/profile polish is **Phase K**.
 
