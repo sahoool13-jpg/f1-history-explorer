@@ -542,3 +542,47 @@ body.is-model .list-title { color: var(--model); }
   .m-axis { margin-left: 40%; }
   .model-h { font-size: 14px; }
 }
+
+/* ============================================================================
+   PHASE F — career-arc trajectory charts (SVG). Estimate (violet) treatment.
+   ========================================================================== */
+.arc-sec { margin: 6px 0 22px; }
+.arc-badge { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--model);
+  border: 1px solid var(--model-dim); border-radius: 2px; padding: 1px 6px; vertical-align: middle; }
+
+.arc-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 6px; }
+.arc-chips { display: flex; gap: 7px; flex-wrap: wrap; }
+.arc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 3px; padding: 3px 7px; }
+.arc-chip .arc-sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
+.arc-x { background: none; border: 0; color: var(--ink-dim); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 2px; }
+.arc-x:hover { color: var(--t-red); }
+.arc-add { font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--panel-2);
+  border: 1px solid var(--line-2); border-radius: 3px; padding: 5px 8px; }
+.arc-add:disabled { opacity: .4; }
+
+.arc-wrap { position: relative; border: 1px dashed var(--line-2); border-radius: 4px;
+  background: repeating-linear-gradient(135deg, rgba(179,136,255,.03) 0 9px, transparent 9px 18px), var(--panel);
+  padding: 8px; }
+.arc-svg { width: 100%; height: auto; display: block; }
+.arc-grid { stroke: var(--line); stroke-width: 1; }
+.arc-ylab { fill: var(--ink-dim); font: 10px var(--mono); text-anchor: end; font-variant-numeric: tabular-nums; }
+.arc-xlab { fill: var(--ink-dim); font: 10px var(--mono); text-anchor: middle; font-variant-numeric: tabular-nums; }
+.arc-faster { fill: var(--model); font: 10px var(--mono); letter-spacing: .04em; }
+.arc-mk { cursor: pointer; transition: r .1s; }
+.arc-mk:hover { r: 5; }
+
+.arc-tip { position: absolute; z-index: 5; pointer-events: none; min-width: 150px; max-width: 230px;
+  background: #0a0e13; border: 1px solid var(--model-dim); border-left: 3px solid var(--model);
+  border-radius: 3px; padding: 8px 10px; box-shadow: 0 6px 22px rgba(0,0,0,.5); }
+.arc-tip .at-h { font-family: var(--disp); font-weight: 700; font-size: 12px; color: var(--ink); }
+.arc-tip .at-r { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--model); margin: 3px 0; }
+.arc-tip .at-ci { color: var(--ink-mut); font-size: 11px; }
+.arc-tip .at-m { font-size: 11px; color: var(--ink-mut); line-height: 1.4; }
+.arc-tip .at-n { color: var(--ink-dim); }
+.arc-tip .at-sparse { color: var(--t-red); }
+
+.model-divider { margin: 30px 0 14px; padding-top: 14px; border-top: 1px solid var(--line);
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); }
+
+@media (max-width: 820px) { .arc-faster { font-size: 9px; } }

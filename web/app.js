@@ -495,6 +495,142 @@
   function mDriver(id) { return DATA.model.drivers.find(function (d) { return d.id === id; }); }
   function mDriver_byName(n) { return DATA.model.drivers.find(function (d) { return d.name === n; }); }
 
+  /* ---- Phase F: career-arc trajectory charts (hand-rolled SVG) ----------- */
+  var ARC_PALETTE = ["#b388ff", "#5ad1e0", "#ff8fc8", "#7ee787"];
+  function arcDriverName(id) { var d = DATA.model.arcDrivers.find(function (x) { return x.id === id; }); return d ? d.name : id; }
+  function buildArcs() {
+    var M = DATA.model;
+    var traj = M.trajectories;
+    var sec = el("section", "arc-sec");
+    // default selection: a striking long-arc overlay
+    var want = ["Michael Schumacher", "Fernando Alonso", "Lewis Hamilton"];
+    var sel = [];
+    want.forEach(function (nm) {
+      var d = M.arcDrivers.find(function (x) { return x.name === nm; });
+      if (d) sel.push(d.id);
+    });
+    if (!sel.length) sel = M.arcDrivers.slice(0, 3).map(function (d) { return d.id; });
+
+    sec.innerHTML =
+      "<h2 class='model-h'>Career arcs <span class='arc-badge'>time-resolved · estimate</span></h2>" +
+      "<p class='model-sub'>The same driver is not the same driver across their career — here is the <b>shape</b> of it, " +
+      "car removed: rise, peak, plateau, decline in car-normalised <b>qualifying</b> pace. <b>Faster is up.</b> " +
+      "The shaded ribbon is the 95% confidence interval — it <b>widens where the evidence thins</b> (early career, a single " +
+      "teammate, cross-era). Where two ribbons overlap, the drivers are <b>not confidently separable</b> there. " +
+      "Qualifying data starts 1994, so a pre-1994 prime shows as a short or late arc — a <i>coverage limit, not a verdict</i>.</p>" +
+      "<div class='arc-controls'><div class='arc-chips' id='arcChips'></div>" +
+      "<select id='arcAdd' class='arc-add'></select></div>" +
+      "<div class='arc-wrap'><div id='arcChart'></div><div class='arc-tip' id='arcTip' hidden></div></div>";
+    var chips = sec.querySelector("#arcChips"), addSel = sec.querySelector("#arcAdd");
+    var chartHost = sec.querySelector("#arcChart"), tip = sec.querySelector("#arcTip");
+
+    function colorOf(i) { return ARC_PALETTE[i % ARC_PALETTE.length]; }
+
+    function draw() {
+      // chips
+      chips.innerHTML = sel.map(function (id, i) {
+        return "<span class='arc-chip' style='--c:" + colorOf(i) + "'>" +
+          "<i class='arc-sw'></i>" + esc(arcDriverName(id)) +
+          (sel.length > 1 ? "<button class='arc-x' data-id='" + id + "'>&times;</button>" : "") + "</span>";
+      }).join("");
+      // add-dropdown (drivers not selected), long arcs first
+      var opts = ["<option value=''>+ add driver…</option>"];
+      M.arcDrivers.forEach(function (d) {
+        if (sel.indexOf(d.id) < 0)
+          opts.push("<option value='" + d.id + "'>" + esc(d.name) + " (" + d.from + "–" + d.to + ", " + d.nSeasons + ")</option>");
+      });
+      addSel.innerHTML = opts.join("");
+      addSel.disabled = sel.length >= 4;
+
+      // ---- geometry ----
+      var W = 920, H = 380, ML = 56, MR = 18, MT = 22, MB = 36;
+      var pw = W - ML - MR, ph = H - MT - MB;
+      var xMin = 1993.5, xMax = 2024.5;
+      var series = sel.map(function (id) { return traj[id]; }).filter(Boolean);
+      var lo = Infinity, hi = -Infinity;
+      series.forEach(function (t) { t.seasons.forEach(function (s) { lo = Math.min(lo, s.ciLow); hi = Math.max(hi, s.ciHigh); }); });
+      lo -= 0.05; hi += 0.05;
+      var X = function (yr) { return ML + (yr - xMin) / (xMax - xMin) * pw; };
+      var Y = function (v) { return MT + (v - lo) / (hi - lo) * ph; };   // lo (fastest) -> top
+
+      var svg = ["<svg viewBox='0 0 " + W + " " + H + "' class='arc-svg' preserveAspectRatio='xMidYMid meet'>"];
+      // y gridlines + labels (seconds; faster=up)
+      var step = (hi - lo) > 1.4 ? 0.5 : 0.25;
+      for (var g = Math.ceil(lo / step) * step; g <= hi; g += step) {
+        var yy = Y(g).toFixed(1);
+        svg.push("<line x1='" + ML + "' y1='" + yy + "' x2='" + (W - MR) + "' y2='" + yy + "' class='arc-grid'/>");
+        svg.push("<text x='" + (ML - 8) + "' y='" + (Y(g) + 3).toFixed(1) + "' class='arc-ylab'>" + (g > 0 ? "+" : "") + g.toFixed(2).replace(/0$/, "") + "</text>");
+      }
+      // x gridlines + labels
+      [1995, 2000, 2005, 2010, 2015, 2020, 2024].forEach(function (yr) {
+        svg.push("<line x1='" + X(yr).toFixed(1) + "' y1='" + MT + "' x2='" + X(yr).toFixed(1) + "' y2='" + (MT + ph) + "' class='arc-grid'/>");
+        svg.push("<text x='" + X(yr).toFixed(1) + "' y='" + (H - 12) + "' class='arc-xlab'>" + yr + "</text>");
+      });
+      // faster indicator
+      svg.push("<text x='" + ML + "' y='" + (MT - 8) + "' class='arc-faster'>▲ faster (s vs field avg · lower = faster)</text>");
+
+      var lookup = {};
+      series.forEach(function (t, i) {
+        var c = colorOf(sel.indexOf(t.id));
+        // split into contiguous runs (gap >= 2 seasons breaks — show the absence)
+        var runs = [], cur = [];
+        t.seasons.forEach(function (s) {
+          if (cur.length && s.season - cur[cur.length - 1].season >= 2) { runs.push(cur); cur = []; }
+          cur.push(s); lookup[t.id + "_" + s.season] = { t: t, s: s };
+        });
+        if (cur.length) runs.push(cur);
+        runs.forEach(function (run) {
+          if (run.length === 1) {
+            var s0 = run[0];
+            svg.push("<line x1='" + X(s0.season).toFixed(1) + "' y1='" + Y(s0.ciLow).toFixed(1) +
+              "' x2='" + X(s0.season).toFixed(1) + "' y2='" + Y(s0.ciHigh).toFixed(1) + "' stroke='" + c + "' stroke-width='2' opacity='.5'/>");
+          } else {
+            var top = run.map(function (s) { return X(s.season).toFixed(1) + "," + Y(s.ciLow).toFixed(1); });
+            var bot = run.slice().reverse().map(function (s) { return X(s.season).toFixed(1) + "," + Y(s.ciHigh).toFixed(1); });
+            svg.push("<polygon points='" + top.concat(bot).join(" ") + "' fill='" + c + "' opacity='.13'/>");
+            svg.push("<polyline points='" + run.map(function (s) { return X(s.season).toFixed(1) + "," + Y(s.rating).toFixed(1); }).join(" ") +
+              "' fill='none' stroke='" + c + "' stroke-width='2'/>");
+          }
+          run.forEach(function (s) {
+            svg.push("<circle cx='" + X(s.season).toFixed(1) + "' cy='" + Y(s.rating).toFixed(1) + "' r='3.2' fill='" + c +
+              "' class='arc-mk' data-key='" + t.id + "_" + s.season + "'/>");
+          });
+        });
+      });
+      svg.push("</svg>");
+      chartHost.innerHTML = svg.join("");
+
+      // hover tooltip (every point traceable to its evidence)
+      chartHost.onmousemove = function (e) {
+        var mk = e.target.closest ? e.target.closest(".arc-mk") : null;
+        if (!mk) { tip.hidden = true; return; }
+        var L = lookup[mk.getAttribute("data-key")]; if (!L) { tip.hidden = true; return; }
+        var s = L.s, faster = s.rating < 0;
+        var tms = (s.tm || []).map(function (x) { return esc(x.code || x.name) + " <span class='at-n'>" + x.n + "r</span>"; }).join(", ");
+        tip.innerHTML = "<div class='at-h'>" + esc(L.t.name) + " · " + s.season + "</div>" +
+          "<div class='at-r'>" + sgnFix(s.rating) + " <span class='at-ci'>± " + s.ci95.toFixed(3) + " s</span></div>" +
+          "<div class='at-m'>vs " + (tms || "—") + (s.nEdges <= 1 ? " <span class='at-sparse'>· thin evidence</span>" : "") + "</div>";
+        tip.hidden = false;
+        var box = chartHost.getBoundingClientRect();
+        var x = e.clientX - box.left, y = e.clientY - box.top;
+        tip.style.left = Math.min(x + 12, box.width - 180) + "px";
+        tip.style.top = Math.max(y - 10, 0) + "px";
+      };
+      chartHost.onmouseleave = function () { tip.hidden = true; };
+    }
+
+    chips.addEventListener("click", function (e) {
+      var b = e.target.closest(".arc-x"); if (!b) return;
+      var id = +b.getAttribute("data-id");
+      if (sel.length > 1) { sel = sel.filter(function (x) { return x !== id; }); draw(); }
+    });
+    addSel.addEventListener("change", function () {
+      var id = +addSel.value; if (id && sel.length < 4 && sel.indexOf(id) < 0) { sel.push(id); draw(); }
+    });
+    draw();
+    return sec;
+  }
+
   function renderModel() {
     var M = DATA.model, host = el("div", "model-wrap");
 
@@ -510,6 +646,12 @@
       "his 3 races in 1994 (±0.64 s, one teammate). An absent or uncertain legend means <i>we cannot measure them</i>, not that they were slow. " +
       "(Conversely, Schumacher <i>is</i> well covered: 1994–2012, 7 teammates.)</div>";
     host.appendChild(banner);
+
+    // ---- HEADLINE: career-arc trajectory charts (Phase F, time-resolved) -----
+    host.appendChild(buildArcs());
+
+    // ---- career-average snapshot (Phase E) ----------------------------------
+    host.appendChild(el("div", "model-divider", "Career-average snapshot &nbsp;·&nbsp; one number per driver (Phase E)"));
 
     // ---- ranked CI-band chart (rankable only) -------------------------------
     var rk = M.drivers.filter(function (d) { return d.rankable; })
