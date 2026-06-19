@@ -34,6 +34,76 @@
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); };
   var last = function (name) { return String(name || "").split(" ").slice(-1)[0]; };
 
+  /* ---- Phase D pace-delta helpers (shared dossier + pace view) ----------- */
+  var TIER_T = { 1: "same session / track / car — fully comparable",
+                 2: "same race / car, clean-lap method — mostly comparable, caveated",
+                 3: "cross-era / context — contextual only" };
+  function tierChip(t) {
+    return "<span class='tier tier" + t + "' title='Tier " + t + " — " + TIER_T[t] + "'>T" + t + "</span>";
+  }
+  // signed gap from a perspective: negative => the perspective driver is faster.
+  // returns {fast, slow, abs} where fast/slow are 'me'|'them'
+  function orient(median) {
+    return median < 0 ? { fast: "me", slow: "them", abs: -median }
+                      : { fast: "them", slow: "me", abs: median };
+  }
+  function deltaNum(absVal, unit) {
+    return "<span class='delta num'>&minus;" + absVal.toFixed(3) + unit + "</span>";
+  }
+  // one pace row: champCode/tmCode are display codes; median is champion-perspective
+  function paceRow(label, tier, champCode, tmCode, median, unit, sub, weak) {
+    var o = orient(median);
+    var fastCode = o.fast === "me" ? champCode : tmCode;
+    var slowCode = o.fast === "me" ? tmCode : champCode;
+    var dn = "<span class='delta num" + (weak ? " delta-weak" : "") + "'>&minus;" + o.abs.toFixed(3) + unit + "</span>";
+    var row = el("div", "pace-row");
+    row.innerHTML =
+      "<div class='pace-label'>" + label + " " + tierChip(tier) + (weak ? " <span class='rel rel-low'>small n</span>" : "") + "</div>" +
+      "<div class='pace-val'><span class='pc-fast'>" + esc(fastCode) + "</span> " +
+        dn + " <span class='pc-slow'>vs " + esc(slowCode) + "</span></div>" +
+      "<div class='pace-sub'>" + sub + "</div>";
+    return row;
+  }
+  function paceBlock(s) {
+    var wrap = el("div", "tm-pace");
+    wrap.appendChild(el("div", "tm-pace-h", "MEASURED PACE DELTAS <span class='tm-pace-src'>Phase D &middot; same car</span>"));
+    var d = s.teammate.delta;
+    var champ = s.code || last(s.champion).slice(0, 3).toUpperCase();
+    // QUALIFYING (Tier 1)
+    if (d && d.quali) {
+      var tm = d.vsCode || last(d.vs).slice(0, 3).toUpperCase();
+      wrap.appendChild(paceRow("QUALIFYING", 1, champ, tm, d.quali.median, "s",
+        "median over n=" + d.quali.n + " of " + d.quali.races + " comparison races" +
+        (d.multiple ? " &middot; primary teammate" : "")));
+    } else {
+      wrap.appendChild(el("div", "pace-row pace-na",
+        "<div class='pace-label'>QUALIFYING " + tierChip(1) + "</div>" +
+        "<div class='pace-na-txt'>" + (s.year < 1994 ? "no qualifying-time data before 1994 — race H2H only"
+                                                       : "no comparable qualifying delta") + "</div>"));
+    }
+    // RACE PACE (Tier 2)
+    if (d && d.race) {
+      var tm2 = d.vsCode || last(d.vs).slice(0, 3).toUpperCase();
+      if (d.race.median === null) {
+        wrap.appendChild(el("div", "pace-row pace-na",
+          "<div class='pace-label'>RACE PACE " + tierChip(2) + " <span class='rel rel-low'>low</span></div>" +
+          "<div class='pace-na-txt'>no reliable comparison &middot; " + d.race.nLow +
+          " race" + (d.race.nLow === 1 ? "" : "s") + " flagged low-reliability</div>"));
+      } else {
+        var weak = d.race.nOk < 3;
+        var sub = "<span class='rel " + (weak ? "rel-low" : "rel-ok") + "'>" + d.race.nOk +
+                  " reliable race" + (d.race.nOk === 1 ? "" : "s") + "</span>";
+        if (d.race.nLow) sub += " &middot; <span class='rel rel-low'>" + d.race.nLow + " flagged low</span> (excluded)";
+        wrap.appendChild(paceRow("RACE PACE", 2, champ, tm2, d.race.median, "s/lap", sub, weak));
+      }
+    } else {
+      wrap.appendChild(el("div", "pace-row pace-na",
+        "<div class='pace-label'>RACE PACE " + tierChip(2) + "</div>" +
+        "<div class='pace-na-txt'>" + (s.year < 1996 ? "no lap-time data before 1996" : "no clean-lap comparison") + "</div>"));
+    }
+    return wrap;
+  }
+
   /* ====================================================================== */
   /*  STAT TOWER (shared header)                                            */
   /* ====================================================================== */
@@ -164,6 +234,7 @@
     b.appendChild(r);
     b.appendChild(el("div", "tm-points",
       "head-to-head points &nbsp; <b>" + fmt(t.champPoints) + "</b> <span style='color:var(--ink-dim)'>champ</span> &nbsp;vs&nbsp; <b>" + fmt(t.tmPoints) + "</b> <span style='color:var(--ink-dim)'>teammate</span>"));
+    b.appendChild(paceBlock(s));
     if (t.outQualified || t.outRaced) {
       var what = [];
       if (t.outQualified) what.push("out-qualified " + t.qLosses + "&ndash;" + t.qWins);
@@ -359,6 +430,66 @@
     return host;
   }
 
+  // 5) teammate pace gaps (Phase D, Tier 1 + Tier 2) -----------------------
+  var PACE_MIN_N = 5;   // sample-size floor for the ranked leaderboard
+  function paceTable(rows, dim) {
+    var t = ltable([
+      { h: "season", cls: "lt-year" }, { h: "teammates (same car)" },
+      { h: "qualifying Δ  T1", cls: "lt-r" }, { h: "n", cls: "lt-r" },
+      { h: "race-pace Δ  T2", cls: "lt-r" }, { h: "reliability", cls: "lt-r" },
+    ]);
+    if (dim) t.className += " lt-dim";
+    var tb = t.querySelector("tbody");
+    rows.forEach(function (p) {
+      var qf = p.quali.median < 0;                     // A faster?
+      var fast = qf ? p.aCode : p.bCode, slow = qf ? p.bCode : p.aCode;
+      var qd = "<span class='pc-fast'>" + esc(fast) + "</span> <span class='delta num'>&minus;" +
+               Math.abs(p.quali.median).toFixed(3) + "s</span> <span class='pc-slow'>" + esc(slow) + "</span>";
+      var nCell = "<span class='" + (p.quali.n < PACE_MIN_N ? "n-small" : "num") + "'>" + p.quali.n + "</span>";
+      var rd = "<span class='lt-na'>&mdash;</span>", rel = "<span class='lt-na'>&mdash;</span>";
+      if (p.race && p.race.median !== null) {
+        var rf = p.race.median < 0 ? p.aCode : p.bCode;
+        var rweak = p.race.nOk < 3;
+        rd = "<span class='pc-fast'>" + esc(rf) + "</span> <span class='delta num" + (rweak ? " delta-weak" : "") + "'>&minus;" +
+             Math.abs(p.race.median).toFixed(3) + "</span><span class='unit'>s/lap</span>";
+        rel = "<span class='rel " + (rweak ? "rel-low" : "rel-ok") + "'>" + p.race.nOk + " ok</span>" +
+              (p.race.nLow ? " <span class='rel rel-low'>" + p.race.nLow + " low</span>" : "");
+      } else if (p.race) {
+        rd = "<span class='rel rel-low'>low</span>";
+        rel = "<span class='rel rel-low'>" + p.race.nLow + " flagged low</span>";
+      }
+      var tr = el("tr");
+      tr.innerHTML = yearCell(p.year) +
+        "<td class='lt-name'>" + esc(p.aCode) + " / " + esc(p.bCode) +
+          " <span class='lt-them'>" + esc(p.constructor || "") + "</span></td>" +
+        "<td class='lt-r'>" + qd + "</td>" +
+        "<td class='lt-r'>" + nCell + "</td>" +
+        "<td class='lt-r'>" + rd + "</td>" +
+        "<td class='lt-r'>" + rel + "</td>";
+      tb.appendChild(rowLink(tr, p.year));
+    });
+    return t;
+  }
+  function renderPace() {
+    var all = DATA.pairings.filter(function (p) { return p.quali; });
+    var bymag = function (a, b) { return Math.abs(b.quali.median) - Math.abs(a.quali.median); };
+    var solid = all.filter(function (p) { return p.quali.n >= PACE_MIN_N; }).sort(bymag);
+    var small = all.filter(function (p) { return p.quali.n < PACE_MIN_N; })
+                   .sort(function (a, b) { return b.quali.n - a.quali.n || bymag(a, b); });
+    var host = el("div");
+    host.appendChild(paceTable(solid, false));
+    host.appendChild(el("p", "lt-note",
+      "Measured teammate pace gaps (Phase D), most lopsided first. Qualifying Δ (Tier 1, 1994+) is the cleanest comparison — same session, track, car; median time gap, the faster driver carries the negative sign. Race-pace Δ (Tier 2) is a clean green-lap median (lap 1, safety-car, pit and outlier laps removed); only reliable races feed it, low-reliability races are flagged not hidden. The ranked list requires at least " + PACE_MIN_N + " comparison races so a tiny sample cannot top the chart. Every figure is read straight from the validated artifacts — nothing recomputed."));
+    if (small.length) {
+      host.appendChild(el("h2", "lt-block-h",
+        "Small sample <span class='lt-count'>" + small.length + "</span>"));
+      host.appendChild(el("p", "lt-block-sub",
+        "Fewer than " + PACE_MIN_N + " comparison races — shown for completeness, NOT ranked. A 2-race gap is not a 20-race gap; read these with caution."));
+      host.appendChild(paceTable(small, true));
+    }
+    return host;
+  }
+
   var VIEWS = {
     "#/beaten":  { tab: "#/beaten",  title: "Champions beaten by their teammate",
                    sub: "The 2016 Rosberg anomaly, generalised across 75 seasons.", render: renderBeaten },
@@ -368,6 +499,8 @@
                    sub: "Titles still mathematically open at the last round.", render: renderFinals },
     "#/clinch":  { tab: "#/clinch",  title: "Earliest clinches",
                    sub: "Titles secured with the most races to spare.", render: renderClinch },
+    "#/pace":    { tab: "#/pace",    title: "Teammate pace gaps",
+                   sub: "Tenths-level measured deltas, same car (Phase D). Tiers visible.", render: renderPace },
   };
 
   /* ====================================================================== */
