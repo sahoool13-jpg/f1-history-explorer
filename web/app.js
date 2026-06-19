@@ -800,23 +800,23 @@
   /* ====================================================================== */
   function renderQuality() {
     var Q = DATA.quality, Z = Q.z95, host = el("div", "model-wrap qual-wrap");
-    var AX = Q.axes, AXKEY = ["pace", "racecraft", "longevity"];
+    var AX = Q.axes, AXKEY = ["pace", "racecraft", "longevity"], AXSHORT = ["PACE", "CRAFT", "LONG"];
     var W = [34, 33, 33];               // pace / racecraft / longevity, equal default (arbitrary)
+    var MODE = "cross";                 // "cross" (absolute) | "within" (peers)
 
     // ---- caveat banner ------------------------------------------------------
     var banner = el("div", "model-banner");
     banner.innerHTML =
       "<div class='mb-tag'>MODEL · ESTIMATE — YOUR weighting, not an official ranking</div>" +
       "<div class='mb-what'><b>There is no correct weighting.</b> The model measures three " +
-      "<b>orthogonal</b> axes — pace, racecraft, longevity — each honestly, with its own uncertainty. " +
-      "<b>You</b> decide how much each counts. The equal default below is an arbitrary starting point, " +
-      "<i>not</i> a claim about what matters.</div>" +
-      "<div class='mb-isnt'><b>What it is NOT:</b> a definitive greatest-of-all-time list. Move the sliders and " +
-      "the ranking changes — that is the point. Where two drivers' intervals overlap they are <b>not confidently " +
-      "separable</b>, and the list says so rather than inventing an order.</div>" +
+      "<b>orthogonal</b> axes — pace, racecraft, longevity — each with its own uncertainty. <b>You</b> " +
+      "decide how much each counts. Equal is an arbitrary starting point, not a claim.</div>" +
+      "<div class='mb-isnt'><b>Interval-aware:</b> a noisy estimate (thin-data early-era racecraft) is " +
+      "shrunk toward neutral so it can't masquerade as signal — era-neutral, and the real " +
+      "<b>field-compression</b> pace gradient (1990s grids were genuinely more spread out) is kept, not erased.</div>" +
       "<div class='mb-era'>Covers the <b>" + Q.refN + " genuine careers (≥4 seasons, all three axes)</b> of the " +
-      "qualifying-timed era (1994+). Pre-1994 primes are out of scope — absent ≠ weak. Longevity is the softest, " +
-      "most constructed axis; if you don't buy it, weight it to zero.</div>";
+      "qualifying-timed era (1994+). Pre-1994 primes are out of scope — absent ≠ weak. Longevity is the softest " +
+      "axis; weight it to zero if you don't buy it.</div>";
     host.appendChild(banner);
 
     // ---- weight sliders -----------------------------------------------------
@@ -828,11 +828,12 @@
       row.innerHTML =
         "<label class='qsl-lab'>" + esc(a.label) + " <span class='qsl-unit'>" + esc(a.unit) + "</span></label>" +
         "<input type='range' min='0' max='100' value='" + W[i] + "' class='qsl-range' data-ax='" + i + "'>" +
-        "<span class='qsl-pct' data-pct='" + i + "'>33%</span>" +
+        "<span class='qsl-pct'>33%</span>" +
         "<div class='qsl-note'>" + esc(a.note) + "</div>";
       sliders.appendChild(row);
     });
     ctrl.appendChild(sliders);
+    var pctEls = ctrl.querySelectorAll(".qsl-pct");
     var presets = el("div", "qpresets");
     presets.innerHTML = "<span class='qp-lab'>presets:</span>";
     [["equal", [34, 33, 33]], ["pace-only", [100, 0, 0]], ["racecraft-led", [25, 60, 15]],
@@ -841,33 +842,56 @@
     });
     ctrl.appendChild(presets);
     host.appendChild(ctrl);
-    var pctEls = ctrl.querySelectorAll(".qsl-pct");   // detached refs (host not yet mounted)
+
+    // ---- mode toggle (cross-era absolute / within-era peers) ----------------
+    var modeBox = el("div", "qmode");
+    modeBox.innerHTML =
+      "<span class='qmode-lab'>COMPARE</span>" +
+      "<button class='qmode-btn active' data-mode='cross'>Cross-era <span class='qmode-s'>absolute</span></button>" +
+      "<button class='qmode-btn' data-mode='within'>Within-era <span class='qmode-s'>peers</span></button>" +
+      "<span class='qmode-note'></span>";
+    host.appendChild(modeBox);
+    var modeNote = modeBox.querySelector(".qmode-note");
+
+    // ---- per-era readout (field compression, visible) -----------------------
+    var eraBox = el("div", "qera");
+    host.appendChild(eraBox);
 
     host.appendChild(el("p", "model-sub qnote",
       "Each bar is the <b>95% interval</b>; the tick is the point estimate. <b>Overlapping bars are not " +
-      "confidently separable</b> — under balanced weighting almost every <i>adjacent</i> pair is a statistical " +
-      "tie (marked <span class='qtie'>≈</span>), which is the honest result, not a glitch. Distinctions are real " +
-      "only between drivers several places apart — use <b>Compare</b> below for a definite verdict on any pair."));
+      "confidently separable</b> (marked <span class='qtie'>≈</span>) — adjacent drivers are usually ties. " +
+      "Click any driver to load their <b>radar</b> below; use <b>Compare</b> for a definite verdict on a pair."));
 
     var rankBox = el("div", "qrank");
     host.appendChild(rankBox);
+    var LAST = {};
 
-    var LAST = {};   // name -> {c, ci} under the current weighting (for the compare tool)
+    function curr(d) { return d[MODE]; }
 
-    // ---- compute + render ---------------------------------------------------
     function recompute() {
-      var sum = W[0] + W[1] + W[2] || 1;
-      var w = [W[0] / sum, W[1] / sum, W[2] / sum];
+      var sum = W[0] + W[1] + W[2] || 1, w = [W[0] / sum, W[1] / sum, W[2] / sum];
       AX.forEach(function (a, i) { pctEls[i].textContent = Math.round(100 * w[i]) + "%"; });
+      modeNote.textContent = MODE === "cross"
+        ? "absolute vs one cross-era spine — keeps the real era gradient (field compression)"
+        : "standing among contemporaries — flattens each era's mean (assumes equal era depth)";
 
       var rows = Q.drivers.map(function (d) {
-        var c = w[0] * d.z[0] + w[1] * d.z[1] + w[2] * d.z[2];
-        var ci = Z * Math.sqrt(Math.pow(w[0] * d.sz[0], 2) + Math.pow(w[1] * d.sz[1], 2) + Math.pow(w[2] * d.sz[2], 2));
-        return { d: d, c: c, ci: ci, contrib: [w[0] * d.z[0], w[1] * d.z[1], w[2] * d.z[2]] };
+        var m = curr(d);
+        var c = w[0] * m.z[0] + w[1] * m.z[1] + w[2] * m.z[2];
+        var ci = Z * Math.sqrt(Math.pow(w[0] * m.sz[0], 2) + Math.pow(w[1] * m.sz[1], 2) + Math.pow(w[2] * m.sz[2], 2));
+        return { d: d, c: c, ci: ci };
       }).sort(function (a, b) { return b.c - a.c; });
+      LAST = {}; rows.forEach(function (r) { LAST[r.d.name] = { c: r.c, ci: r.ci }; });
 
-      LAST = {};
-      rows.forEach(function (r) { LAST[r.d.name] = { c: r.c, ci: r.ci }; });
+      // per-era readout
+      var eraAgg = {}; Q.eras.forEach(function (e) { eraAgg[e] = []; });
+      rows.forEach(function (r) { eraAgg[r.d.era].push(r.c); });
+      eraBox.innerHTML = "<span class='qera-h'>era mean composite</span>" + Q.eras.map(function (e) {
+        var arr = eraAgg[e], mean = arr.reduce(function (s, x) { return s + x; }, 0) / (arr.length || 1);
+        return "<span class='qera-cell'><span class='qera-yr'>" + e + "</span>" +
+          "<span class='qera-val'>" + sgn1(mean) + "</span><span class='qera-n'>n=" + arr.length + "</span></span>";
+      }).join("") + "<span class='qera-tip'>" +
+        (MODE === "cross" ? "↑ modern higher = real field compression, kept" : "≈ flat = peers view") + "</span>";
 
       var lo = Math.min.apply(null, rows.map(function (r) { return r.c - r.ci; })) - 0.1;
       var hi = Math.max.apply(null, rows.map(function (r) { return r.c + r.ci; })) + 0.1;
@@ -876,26 +900,22 @@
       rankBox.innerHTML = "";
       var head = el("div", "qr-head");
       head.innerHTML = "<span class='qr-rank'>#</span><span class='qr-name'>driver</span>" +
-        "<span class='qr-bar'>composite — weighted z-score, ▏95% interval &nbsp; <b>overlap ⇒ tie</b></span>" +
+        "<span class='qr-bar'>composite — weighted z, ▏95% interval &nbsp;<b>overlap ⇒ tie</b></span>" +
         "<span class='qr-ax'>pace</span><span class='qr-ax'>craft</span><span class='qr-ax'>long</span>";
       rankBox.appendChild(head);
-
-      // zero line marker
       rows.forEach(function (r, i) {
-        var prev = rows[i - 1];
-        var tied = prev && (r.c + r.ci >= prev.c - prev.ci);   // interval overlaps the driver above
-        var row = el("div", "qrow" + (tied ? " qrow-tie" : ""));
-        var bar = "<div class='qtrack'>" +
-          "<div class='qzero' style='left:" + pct(0) + "%'></div>" +
+        var prev = rows[i - 1], tied = prev && (r.c + r.ci >= prev.c - prev.ci);
+        var m = curr(r.d);
+        var row = el("div", "qrow" + (tied ? " qrow-tie" : "")); row.dataset.name = r.d.name;
+        var bar = "<div class='qtrack'><div class='qzero' style='left:" + pct(0) + "%'></div>" +
           "<div class='qband' style='left:" + pct(r.c - r.ci) + "%;width:" + (pct(r.c + r.ci) - pct(r.c - r.ci)) + "%'></div>" +
           "<div class='qtick' style='left:" + pct(r.c) + "%'></div></div>";
-        var cells = r.d.z.map(function (zv, k) {
-          var sign = zv >= 0 ? "pos" : "neg";
-          return "<span class='qcell qcell-" + AXKEY[k] + " qcell-" + sign + "' title='" +
-            AX[k].label + " z = " + zv.toFixed(2) + " (raw " + r.d.raw[k] + ")'>" + sgn1(zv) + "</span>";
+        var cells = m.z.map(function (zv, k) {
+          return "<span class='qcell qcell-" + AXKEY[k] + " qcell-" + (zv >= 0 ? "pos" : "neg") + "' title='" +
+            AX[k].label + " z=" + zv.toFixed(2) + " (raw " + r.d.raw[k] + ")'>" + sgn1(zv) + "</span>";
         }).join("");
         row.innerHTML =
-          "<span class='qr-rank'>" + (tied ? "<span class='qtie' title='interval overlaps the driver above — not confidently separable'>≈</span>" : "") + (i + 1) + "</span>" +
+          "<span class='qr-rank'>" + (tied ? "<span class='qtie' title='overlaps the driver above — not confidently separable'>≈</span>" : "") + (i + 1) + "</span>" +
           "<span class='qr-name'>" + esc(r.d.name) + (r.d.active ? " <span class='qactive' title='still racing — longevity is so-far'>•</span>" : "") +
             " <span class='qns'>" + r.d.nSeasons + "y</span></span>" +
           "<span class='qr-bar'>" + bar + "<span class='qval'>" + sgn1(r.c) + " <span class='qci'>±" + r.ci.toFixed(2) + "</span></span></span>" +
@@ -906,42 +926,73 @@
 
     function sgn1(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2); }
 
-    // ---- pairwise compare (explicit tie / separable verdict) ----------------
-    var cmp = el("div", "qcompare");
-    var names = Q.drivers.map(function (d) { return d.name; }).sort();
-    var opt = function (sel) {
-      return names.map(function (n) {
-        return "<option" + (n === sel ? " selected" : "") + ">" + esc(n) + "</option>";
-      }).join("");
-    };
-    cmp.innerHTML = "<div class='qc-h'>COMPARE — is the gap real under your weights?</div>" +
-      "<div class='qc-pick'><select class='qcA'>" + opt("Fernando Alonso") + "</select>" +
-      "<span class='qc-vs'>vs</span><select class='qcB'>" + opt("Antonio Giovinazzi") + "</select></div>" +
-      "<div class='qc-out'></div>";
-    var selA = cmp.querySelector(".qcA"), selB = cmp.querySelector(".qcB"),
-        outEl = cmp.querySelector(".qc-out");   // detached refs (host not yet mounted)
-
-    function renderCompare() {
-      var a = LAST[selA.value], b = LAST[selB.value];
-      if (!a || !b) return;
-      var hi = a.c >= b.c ? { n: selA.value, v: a } : { n: selB.value, v: b };
-      var loD = a.c >= b.c ? { n: selB.value, v: b } : { n: selA.value, v: a };
-      var gap = hi.v.c - loD.v.c;
-      var sep = (hi.v.c - hi.v.ci) > (loD.v.c + loD.v.ci);   // intervals clear of each other
-      var out = outEl;
-      if (selA.value === selB.value) { out.className = "qc-out"; out.innerHTML = "<span class='qc-tie'>same driver</span>"; return; }
-      out.className = "qc-out " + (sep ? "qc-sep" : "qc-tie-out");
-      out.innerHTML = sep
-        ? "<b>" + esc(hi.n) + "</b> is clearly ahead — composite gap <b>" + gap.toFixed(2) +
-          "</b>, intervals do not overlap. A real separation under this weighting."
-        : "<span class='qc-tie'>statistical tie</span> — gap " + gap.toFixed(2) +
-          " but the 95% intervals overlap (" + esc(hi.n) + " ±" + hi.v.ci.toFixed(2) + ", " +
-          esc(loD.n) + " ±" + loD.v.ci.toFixed(2) + "). Not confidently separable; don't read the order.";
+    // ---- radar (three-axis shape, overlay up to two drivers) ----------------
+    function radarSVG(entries) {
+      var S = 168, c = S / 2, R = 60, ang = [-90, 30, 150].map(function (d) { return d * Math.PI / 180; });
+      var ZMIN = -2.5, ZMAX = 2.5;
+      var rOf = function (z) { return R * (Math.max(ZMIN, Math.min(ZMAX, z)) - ZMIN) / (ZMAX - ZMIN); };
+      var P = function (z, i) { var r = rOf(z); return [c + r * Math.cos(ang[i]), c + r * Math.sin(ang[i])]; };
+      var s = "<svg viewBox='0 0 " + S + " " + S + "' class='qradar'>";
+      // rings at z = -1,0,1,2
+      [-1, 0, 1, 2].forEach(function (zz) {
+        var pts = [0, 1, 2].map(function (i) { return P(zz, i).join(","); }).join(" ");
+        s += "<polygon points='" + pts + "' class='qrad-ring" + (zz === 0 ? " qrad-zero" : "") + "'/>";
+      });
+      // spokes + labels
+      ang.forEach(function (a, i) {
+        var e = P(ZMAX, i);
+        s += "<line x1='" + c + "' y1='" + c + "' x2='" + e[0] + "' y2='" + e[1] + "' class='qrad-spoke'/>";
+        var L = P(ZMAX + 0.55, i);
+        s += "<text x='" + L[0] + "' y='" + L[1] + "' class='qrad-lab qrad-lab-" + AXKEY[i] + "'>" + AXSHORT[i] + "</text>";
+      });
+      // driver polygons
+      entries.forEach(function (e, k) {
+        var pts = [0, 1, 2].map(function (i) { return P(e.z[i], i).join(","); }).join(" ");
+        s += "<polygon points='" + pts + "' class='qrad-shape qrad-" + (k === 0 ? "a" : "b") + "'/>";
+        [0, 1, 2].forEach(function (i) { var p = P(e.z[i], i); s += "<circle cx='" + p[0] + "' cy='" + p[1] + "' r='2.4' class='qrad-dot qrad-" + (k === 0 ? "a" : "b") + "'/>"; });
+      });
+      return s + "</svg>";
     }
 
-    // ---- partial-coverage section -------------------------------------------
+    // ---- pairwise compare + radar -------------------------------------------
+    var cmp = el("div", "qcompare");
+    var names = Q.drivers.map(function (d) { return d.name; }).sort();
+    var byName = {}; Q.drivers.forEach(function (d) { byName[d.name] = d; });
+    var opt = function (sel) {
+      return names.map(function (n) { return "<option" + (n === sel ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+    };
+    cmp.innerHTML =
+      "<div class='qc-h'>COMPARE — radar shape + is the gap real under your weights?</div>" +
+      "<div class='qc-grid'><div class='qc-left'>" +
+      "<div class='qc-pick'><select class='qcA'>" + opt("Fernando Alonso") + "</select>" +
+      "<span class='qc-vs'>vs</span><select class='qcB'>" + opt("Antonio Giovinazzi") + "</select></div>" +
+      "<div class='qc-out'></div></div>" +
+      "<div class='qc-radar'></div></div>";
+    var selA = cmp.querySelector(".qcA"), selB = cmp.querySelector(".qcB"),
+        outEl = cmp.querySelector(".qc-out"), radEl = cmp.querySelector(".qc-radar");
+
+    function renderCompare() {
+      var dA = byName[selA.value], dB = byName[selB.value];
+      var a = LAST[selA.value], b = LAST[selB.value];
+      radEl.innerHTML = radarSVG([{ z: curr(dA).z }, { z: curr(dB).z }]) +
+        "<div class='qrad-key'><span class='qrad-ka'>" + esc(dA.code || last(dA.name)) + "</span>" +
+        "<span class='qrad-kb'>" + esc(dB.code || last(dB.name)) + "</span></div>";
+      if (!a || !b) return;
+      if (selA.value === selB.value) { outEl.className = "qc-out"; outEl.innerHTML = "<span class='qc-tie'>same driver</span>"; return; }
+      var hi = a.c >= b.c ? { n: selA.value, v: a } : { n: selB.value, v: b };
+      var loD = a.c >= b.c ? { n: selB.value, v: b } : { n: selA.value, v: a };
+      var gap = hi.v.c - loD.v.c, sep = (hi.v.c - hi.v.ci) > (loD.v.c + loD.v.ci);
+      outEl.className = "qc-out " + (sep ? "qc-sep" : "qc-tie-out");
+      outEl.innerHTML = sep
+        ? "<b>" + esc(hi.n) + "</b> clearly ahead — gap <b>" + gap.toFixed(2) + "</b>, intervals don't overlap. A real separation here."
+        : "<span class='qc-tie'>statistical tie</span> — gap " + gap.toFixed(2) + " but the 95% intervals overlap (" +
+          esc(hi.n) + " ±" + hi.v.ci.toFixed(2) + ", " + esc(loD.n) + " ±" + loD.v.ci.toFixed(2) + "). Don't read the order.";
+    }
+
+    // ---- partial-coverage ---------------------------------------------------
+    var part;
     if (Q.partial && Q.partial.length) {
-      var part = el("details", "qpartial");
+      part = el("details", "qpartial");
       var lis = Q.partial.map(function (p) {
         var why = /short-career/.test(p.missing) ? "short career (&lt;4 seasons)" :
           (!p.has[1] ? "no racecraft axis (pre-clean-lap data)" : "missing an axis");
@@ -950,8 +1001,7 @@
       part.innerHTML = "<summary>Partial coverage — " + Q.partial.length +
         " drivers excluded from the composite (flagged, never zero-filled)</summary>" +
         "<div class='qp-body'><p>The composite needs all three axes and a genuine (≥4-season) career. " +
-        "These drivers are missing one or the other, so they are <b>shown here, not ranked</b> — a blank axis is " +
-        "not a zero.</p><ul class='qp-list'>" + lis + "</ul></div>";
+        "These are shown here, not ranked — a blank axis is not a zero.</p><ul class='qp-list'>" + lis + "</ul></div>";
     }
 
     // ---- how it works -------------------------------------------------------
@@ -959,24 +1009,23 @@
     how.innerHTML =
       "<summary>How the composite works &amp; why there is no official ranking</summary>" +
       "<div class='mh-body'>" +
-      "<p><b>Three axes, normalised.</b> Pace (G, seconds vs the era backbone), racecraft (H, positions vs what pace " +
-      "predicts) and longevity (I, effective competitive seasons) live on different scales. Each is <b>z-scored</b> " +
-      "against the same reference population — the " + Q.refN + " genuine ≥4-season careers — so all three become " +
-      "mean-0, sd-1, oriented so higher = better.</p>" +
-      "<p><b>The composite is yours.</b> composite = w·z, with weights you set (renormalised to sum 1). We ship no " +
-      "fixed weights because there is no measurable 'right' answer to how much racecraft is worth a tenth of pace. " +
-      "The equal default is a starting point, not a verdict.</p>" +
-      "<p><b>Uncertainty propagates.</b> Each axis carries a 95% interval; the composite interval combines them " +
-      "(√Σ(w·σ)², the axes being orthogonal). When two drivers' intervals overlap they are marked <b>≈</b> — not " +
-      "confidently separable. A weighting that looks decisive on the points alone is often a statistical tie.</p>" +
-      "<p><b>Always decomposable.</b> Every row shows its three axis z-scores, so a position is never a black box. " +
-      "Inputs trace to the validated Phase G/H/I artifacts; nothing here is re-measured. Estimates throughout.</p>" +
-      "</div>";
+      "<p><b>Three axes, normalised.</b> Pace (G), racecraft (H), longevity (I) live on different scales, so each " +
+      "is z-scored against the " + Q.refN + " genuine ≥4-season careers — mean 0, sd 1, higher = better.</p>" +
+      "<p><b>Interval-aware shrinkage (empirical Bayes).</b> Each axis estimate is pulled toward neutral in " +
+      "proportion to its uncertainty (τ²: pace " + Q.tau2.cross.pace + ", racecraft " + Q.tau2.cross.race +
+      ", longevity " + Q.tau2.cross.long + " — lower = more shrink). Racecraft is the noisy axis, so it shrinks " +
+      "most; pace barely moves. This kills noise-as-signal era-neutrally — and a globally noisier axis " +
+      "(racecraft) therefore carries marginally less effect for a given slider %, which is honest.</p>" +
+      "<p><b>Cross-era vs within-era.</b> <i>Cross-era</i> (default) scores everyone against one spine, keeping the " +
+      "real field-compression gradient (1990s grids were more spread). <i>Within-era</i> scores you against your " +
+      "contemporaries, flattening each era — useful, but it assumes equal era depth, so it's a choice, not the truth.</p>" +
+      "<p><b>The composite is yours.</b> composite = w·z on the shrunk axes; intervals combine as √Σ(w·σ)². " +
+      "Overlap ⇒ tie. Every row decomposes into its three axis z-scores (and the radar shape); nothing is " +
+      "re-measured. Estimates throughout.</p></div>";
 
     // wire events
     ctrl.addEventListener("input", function (e) {
-      var ax = e.target.getAttribute("data-ax");
-      if (ax == null) return;
+      var ax = e.target.getAttribute("data-ax"); if (ax == null) return;
       W[+ax] = +e.target.value; recompute(); renderCompare();
     });
     presets.addEventListener("click", function (e) {
@@ -986,11 +1035,23 @@
       for (var i = 0; i < ranges.length; i++) ranges[i].value = W[i];
       recompute(); renderCompare();
     });
+    modeBox.addEventListener("click", function (e) {
+      var m = e.target.getAttribute("data-mode"); if (!m || m === MODE) return;
+      MODE = m;
+      var btns = modeBox.querySelectorAll(".qmode-btn");
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === MODE);
+      recompute(); renderCompare();
+    });
+    rankBox.addEventListener("click", function (e) {
+      var row = e.target.closest && e.target.closest(".qrow"); if (!row || !row.dataset.name) return;
+      selA.value = row.dataset.name; renderCompare();
+      if (cmp.scrollIntoView) cmp.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
     selA.addEventListener("change", renderCompare);
     selB.addEventListener("change", renderCompare);
 
     recompute();
-    host.appendChild(el("div", "model-divider", "Compare two drivers under your weighting"));
+    host.appendChild(el("div", "model-divider", "Compare two drivers — radar shape &amp; separability"));
     host.appendChild(cmp);
     renderCompare();
     if (part) host.appendChild(part);

@@ -3,7 +3,7 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
-## Status: Phases A–J ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity · user-weighted composite)
+## Status: Phases A–K ✅ COMPLETE (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity · user-weighted composite · interval-aware refinement + radar)
 
 Phase A is **ingest + a validated relational base + the factual teammate
 head-to-head spine** only. No rankings, no Elo, no car-normalisation, no UI —
@@ -903,4 +903,88 @@ wants an eyeball.)*
 Artifacts: `driver_quality_axes` (172 drivers; raw + z-scored axes + z-scale CIs + coverage
 flags), `quality_norm_meta` (per-axis reference mean/std/population). Web: `quality` block in
 `web/data.js`. All `is_estimate=1`. Full radar/profile polish is **Phase K**.
+
+# Phase K — interval-aware refinement, within-era mode, radar profiles ⚠️ ESTIMATE · interactive
+
+Phase K closes the model. A diagnostic found the composite skewed toward modern drivers;
+the investigation (reported in full before any change) showed it was **mostly real signal**
+— 1990s grids were genuinely more spread out (**field compression**: ~1.5–2 s teammate
+gaps then vs ~0.3 s now), carried faithfully through the era-normalised pace — **plus** one
+genuine defect: thin-data early-era racecraft (intervals ~2× wider) counted **noisy point
+estimates at full weight**. Phase K fixes the defect without erasing the real gradient, adds
+a within-era option, surfaces the era trend, and ships the radar.
+
+Run: `python3 pipeline/run_phase_k.py` → **Phase J gate 13/13 + Phase K gate 10/10**.
+
+## A — interval-aware shrinkage (empirical Bayes), the new baseline
+
+Each axis estimate `z` carries measurement noise `σ_z`. Model `z = θ + ε`,
+`ε ~ N(0, σ_z²)`, `θ ~ N(0, τ²)`; estimate `τ² = Var(z) − mean(σ_z²)` per axis, then
+
+```
+z_shrunk = z · τ²/(τ²+σ_z²)          (toward 0 = neutral)
+σ_shrunk = √( τ²·σ_z²/(τ²+σ_z²) )    (tighter posterior → tighter composite CI)
+```
+
+`τ²`: **pace 0.88, racecraft 0.34, longevity 0.97**. So racecraft (the noisy axis) shrinks
+hard (mean factor **0.48**, noisy ones to 0.08); **pace barely moves (0.89), longevity barely
+(0.97)** — the real field-compression pace gradient is **preserved**. It is **era-neutral by
+construction** (shrinkage depends only on each driver's interval): risers *and* fallers are
+both early-era — **Hill #38→#31, Coulthard #42→#35** (noisy-negative lifted) vs **Berger
+#33→#53, Alesi #20→#42** (noisy-positive racecraft deflated, killing the old racecraft-heavy
+artifact). Era cohort means barely move (**−0.38/+0.06/+0.31 → −0.25/+0.11/+0.23**, still
+monotonic) — a noise-reduction, *not* an era-adjustment.
+
+> **A self-caught correction:** the original prototype under-shrank — it treated the exported
+> z-scale *sigma* as a 95% *halfwidth* and divided by Z95 again, shrinking ~3.8× too little.
+> The pipeline computes it correctly from raw units; the real effect is stronger (racecraft
+> factor 0.48, not 0.85), and *better* — the Giovinazzi thesis still holds and racecraft-heavy
+> no longer crowns high-variance artifacts.
+
+## B — within-era / cross-era toggle (you decide)
+
+- **Cross-era (default)** — z-score against one cross-era spine; **keeps** the field-compression
+  gradient. "How far from the all-time spine."
+- **Within-era** — z-score within the driver's era-third (1994-2003 / 2004-2013 / 2014-2024);
+  **flattens** each era's mean to 0. "Standing among contemporaries." It *assumes* equal era
+  depth, so it's offered as an explicit choice, never the silent default.
+
+## C — per-era readout
+
+A live strip shows the **mean composite per era** under the current weights+mode — so the
+field-compression effect is **visible, not hidden** (cross: −0.25 / +0.11 / +0.23, the modern
+tilt; within: ≈ 0 / 0 / 0). Updates with every slider and toggle.
+
+## Radar profiles + polish
+
+Each driver is a **three-axis shape** (pace top, racecraft lower-right, longevity lower-left;
+rings at z = −1…+2, the z = 0 spine dashed). The Compare panel **overlays two radars** (violet
+vs cyan) so quality *shapes* sit side by side — a spiky triangle (great at one axis) vs a big
+balanced one. **Click any ranked row** to load its radar and verdict.
+
+## Phase K gate (10 PASS / 0 FAIL) — plus Phase J gate still 13/13
+
+| Check | Result |
+|-------|--------|
+| Shrinkage targets the noisy axis: racecraft factor **0.48** vs pace **0.89**, longevity **0.97** | PASS |
+| Field-compression gradient **survives** shrink (Δ era means +0.48, still monotonic) | PASS |
+| **Era-neutral**: risers (Hill, Coulthard) AND fallers (Alesi, Berger) both 1994-2003 | PASS |
+| Within-era flattens every cohort mean to ≈ 0 (max \|mean\| 0.06) | PASS |
+| Hill rises **#38→#31** (legitimate) while Alonso/Hamilton/Schumacher move **0** places | PASS |
+| EB posterior intervals tighten (median composite CI ±0.47 → **±0.36**) | PASS |
+| Every driver decomposable in both modes (radar well-defined); `is_estimate=1` | PASS |
+
+**Giovinazzi thesis, post-shrinkage:** pace-only **#16** → balanced **#41** → racecraft-heavy
+**#56** of 63 — still the whole story (pace flatters, the full picture sinks him). He rises a
+little vs the unshrunk #47 because his *thin-data* racecraft is pulled toward neutral — the
+**same honest rule that lifts Hill**, applied without looking at who it is.
+
+The model is **complete**: three orthogonally-measured, era-normalised axes → an
+interval-aware, user-weighted composite that asserts no single ranking, carries its
+uncertainty as the hero, shows ties as ties, and stays decomposable to the last pixel.
+Everything is an estimate; nothing is overclaimed.
+
+Artifacts: `driver_quality_axes` extended (cohort + cross/within shrunk z & σ),
+`quality_norm_meta` (per-mode/axis τ²). Web: `#/quality` view (sliders · mode toggle · per-era
+readout · radar · Compare). All `is_estimate=1`.
 
