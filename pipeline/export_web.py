@@ -285,16 +285,19 @@ def build(con):
     quality = {
         "axes": [
             {"key": "pace", "label": "Pace", "unit": "s vs era backbone (G)",
-             "note": "qualifying pace, car- & era-normalised; lower = faster"},
-            {"key": "racecraft", "label": "Racecraft", "unit": "positions vs pace (H)",
-             "note": "Sunday conversion beyond what pace predicts; orthogonal to pace"},
+             "note": "qualifying pace, car- & era-normalised; lower = faster", "weak": False},
+            {"key": "racecraft", "label": "Racecraft", "unit": "positions vs pace+grid (H)",
+             "note": "conversion beyond pace AND grid; WEAKLY IDENTIFIED — in teammate data "
+                     "the grid gap ≈ the pace gap, so little separable signal survives",
+             "weak": tau["cross"]["race"] < 0.05},
             {"key": "longevity", "label": "Longevity", "unit": "effective seasons (I)",
-             "note": "sustained competitive presence; the softest, most constructed axis"},
+             "note": "sustained competitive presence; the softest, most constructed axis", "weak": False},
         ],
         "drivers": quality_drivers,
         "partial": quality_partial,
         "eras": ["1994-2003", "2004-2013", "2014-2024"],
         "tau2": tau,
+        "defaultWeights": [44, 12, 44],   # racecraft de-emphasised (Phase L FIX 1, Option C)
         "refN": q("SELECT ref_n FROM quality_norm_meta LIMIT 1")[0][0],
         "z95": 1.959964,
     }

@@ -3,6 +3,27 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
+## Status: Phases A–K ✅ COMPLETE  ·  Phase L (axis-fairness) in progress
+
+> **Phase L / FIX 1 (racecraft grid-opportunity).** The old racecraft used the raw teammate
+> finishing-position margin, which **penalises dominant front-runners** (no positions to gain
+> at the front) — `corr(CRAFT_z, mean grid) = −0.427`. We switch to **CONVERSION** =
+> `(finish_gap − grid_gap)`: positions gained on the teammate *during the race*, beyond pace.
+> A pole-sitter who holds station now reads ~0 (neutral), not penalised; the opportunity
+> carvers (Sainz #7→#13, Leclerc #8→#15, Ocon, Gasly) compress. Bias **−0.427 → −0.193**.
+>
+> **Honest finding (decided by a z²/v signal-to-noise scan, not by preference):** in teammate
+> data the **grid gap ≈ the pace gap** (the faster teammate qualifies ahead), so once *both*
+> are removed the residual is statistically indistinguishable from noise — only **3 drivers**
+> clear z²/v ≥ 4, **none** ≥ 9. Signal is **concentrated → Option C**: no τ² floor, racecraft
+> sits **honestly near-dead** (τ²≈0.001, points ~0, wide intervals) — *we do not manufacture a
+> signal*. It is **flagged "weakly identified"**, defaulted to a **low weight (12%)**, and the
+> explainer states the confound. The penalised front-runners (Vettel #16→#12, Häkkinen #25→#20)
+> recover from the **removed penalty**, not from a racecraft contribution. τ² re-estimated:
+> pace 0.883 / racecraft 0.001 / longevity 0.975. Gate: `run_phase_l_fix1.py` →
+> **FIX 1: 11 PASS / 0 FAIL** (+ J 13/13, K 10/10, Option-C-aware). *(FIX 2, longevity skew, is
+> a separate PR.)*
+
 ## Status: Phases A–K ✅ COMPLETE (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity · user-weighted composite · interval-aware refinement + radar)
 
 Phase A is **ingest + a validated relational base + the factual teammate
