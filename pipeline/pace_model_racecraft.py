@@ -38,14 +38,17 @@ intervals wider. Ratings are ESTIMATES (is_estimate kept separate).
 ================================ METHOD (exact) ==============================
 
 PER PAIR-SEASON (same car, ordered driverA<driverB):
-  finish_margin = mean over eligible races of clip(pos_B - pos_A, -CAP, +CAP)
-                  (driver A ahead => positive; a solo DNF scores -CAP for the
-                   retiree vs a classified teammate).
+  conv_margin = mean over eligible races of clip((pos_B-pos_A) - (grid_B-grid_A), -CAP, +CAP)
+                  -- GRID-CONDITIONED conversion: positions A gained on B from grid to
+                  flag (driver A ahead beyond grid => positive). Holding station reads ~0,
+                  so a dominant front-runner is no longer censored for the positions they
+                  could never gain. A solo DNF scores -CAP (a full racecraft loss); races
+                  with no grid (pit-lane start) are dropped, not guessed.
   pace_pred_margin = b_q*(-quali_delta) + b_rp*(-racepace_delta) + c, where
-                  (b_q, b_rp, c) come from ONE OLS fit of finish_margin on the two
+                  (b_q, b_rp, c) come from ONE OLS fit of conv_margin on the two
                   pace deltas across all pairs that have both (negative delta = A
                   faster => predicts A ahead).
-  racecraft_residual = finish_margin - pace_pred_margin.   <-- the orthogonal signal
+  racecraft_residual = conv_margin - pace_pred_margin.   <-- grid-conditioned & pace-orthogonal
 
 DRIVER-LEVEL NETWORK (racecraft is sparse — career nodes, not driver-seasons):
   nodes = drivers; one edge per pair-season with target = racecraft_residual and
@@ -88,20 +91,37 @@ def _era_third(season):
     return 0 if season <= ERA_CUTS[0] else (1 if season <= ERA_CUTS[1] else 2)
 
 
+def _grid_stratum(g):
+    """Starting-grid stratum (front-to-back); g<=0 is a pit/no-grid start -> back."""
+    if g <= 0:
+        return 3
+    return 0 if g <= 3 else (1 if g <= 8 else (2 if g <= 15 else 3))
+
+
 def _pair_margins(con):
-    """Per pair-season: mean luck-excluded finishing margin (A ahead positive),
-    number of eligible races, and number of races dropped as luck/ambiguous."""
-    rows = con.execute("""SELECT raceId, season, constructorId, driverId, position_order, status
+    """Per pair-season: per-race luck-excluded finishing-position margins WITH each
+    race's starting-grid stratum, number of eligible races, and number of races dropped
+    as luck/ambiguous.
+
+    Racecraft must not reward grid opportunity. A dominant front-runner out-qualifies
+    their teammate hugely; finishing positions saturate at the front, so a single global
+    pace->margin fit over-predicts their margin (no positions to gain) and scores them
+    negative. We keep the finishing-position margin but fit the pace->margin expectation
+    SEPARATELY WITHIN starting-grid strata (compute(): front-pairs judged against other
+    front-pairs' conversion, midfield against midfield), which lets the pace effect
+    SATURATE at the front and removes the opportunity bias while preserving real signal.
+    """
+    rows = con.execute("""SELECT raceId, season, constructorId, driverId, grid, position_order, status
                           FROM fact_results""").fetchall()
     byrc = defaultdict(list)
-    for raceId, season, cid, did, po, st in rows:
-        byrc[(raceId, cid)].append((season, did, po, st))
-    margins = defaultdict(list)      # (season,a,b) -> [per-race margin, A perspective]
+    for raceId, season, cid, did, grid, po, st in rows:
+        byrc[(raceId, cid)].append((season, did, grid, po, st))
+    margins = defaultdict(list)      # (season,a,b) -> [(per-race margin A-persp, grid-stratum)]
     dropped = defaultdict(int)       # (season,a,b) -> n races dropped (luck/ambiguous)
     for (raceId, cid), lst in byrc.items():
         if len(lst) != 2:            # only genuine two-car pairings
             continue
-        (s1, d1, p1, st1), (s2, d2, p2, st2) = lst
+        (s1, d1, g1, p1, st1), (s2, d2, g2, p2, st2) = lst
         a, b = (d1, d2) if d1 < d2 else (d2, d1)
         key = (s1, a, b)
 
@@ -121,7 +141,9 @@ def _pair_margins(con):
             m = -CAP
         else:                        # d2 solo error, d1 classified
             m = CAP
-        margins[key].append(m if d1 < d2 else -m)
+        gg = [g for g in (g1, g2) if g > 0]
+        stratum = _grid_stratum(min(gg) if gg else 0)    # pair's grid tier (best slot)
+        margins[key].append((m if d1 < d2 else -m, stratum))
     return margins, dropped
 
 
@@ -134,21 +156,34 @@ def compute(con):
         "SELECT season,driverA,driverB,median_delta_s FROM racepace_teammate_pairseason "
         "WHERE median_delta_s IS NOT NULL").fetchall()}
 
-    # pair-seasons with enough eligible races AND both pace deltas (=> pace-orthogonal)
+    # pair-seasons with enough eligible races AND both pace deltas (=> pace-orthogonal).
+    # Each pair carries its dominant grid stratum (mode of its races) so the pace fit can
+    # be done WITHIN strata -- the grid-opportunity control.
+    from collections import Counter
     pairs = []
     for k, ms in margins.items():
         if len(ms) >= MIN_RACES and k in qd and k in rp:
-            pairs.append((k, float(np.mean(ms)), len(ms)))
+            strat = Counter(s for _, s in ms).most_common(1)[0][0]
+            pairs.append((k, float(np.mean([m for m, _ in ms])), len(ms), strat))
 
-    # ONE OLS: finish_margin ~ b_q*(-quali) + b_rp*(-racepace) + c
-    Mv = np.array([m for _, m, _ in pairs])
-    Qv = np.array([-qd[k] for k, _, _ in pairs])
-    Rv = np.array([-rp[k] for k, _, _ in pairs])
-    A = np.column_stack([Qv, Rv, np.ones(len(Mv))])
-    coef, *_ = np.linalg.lstsq(A, Mv, rcond=None)
-    pred = A @ coef
-    resid = Mv - pred                 # racecraft residual per pair-season
+    # PER-STRATUM OLS: finish_margin ~ b_q*(-quali) + b_rp*(-racepace) + c, fit separately
+    # within each starting-grid stratum so the pace effect saturates at the front.
+    Mv = np.array([m for _, m, _, _ in pairs])
+    Qv = np.array([-qd[k] for k, _, _, _ in pairs])
+    Rv = np.array([-rp[k] for k, _, _, _ in pairs])
+    Sv = np.array([s for _, _, _, s in pairs])
+    pred = np.zeros(len(Mv))
+    strata_coef = {}
+    for s in sorted(set(Sv.tolist())):
+        idx = np.where(Sv == s)[0]
+        A = np.column_stack([Qv[idx], Rv[idx], np.ones(len(idx))])
+        cf, *_ = np.linalg.lstsq(A, Mv[idx], rcond=None)
+        pred[idx] = A @ cf
+        strata_coef[s] = cf
+    resid = Mv - pred                 # racecraft residual per pair-season (grid-conditioned)
     r2_pace = 1.0 - resid.var() / Mv.var()
+    coef, *_ = np.linalg.lstsq(np.column_stack([Qv, Rv, np.ones(len(Mv))]), Mv, rcond=None)  # pooled, for reporting
+    pairs = [(k, m, n) for k, m, n, _ in pairs]    # drop stratum for the rest of the pipeline
 
     # driver-level node set
     drivers = sorted({d for (s, a, b), _, _ in pairs for d in (a, b)})
