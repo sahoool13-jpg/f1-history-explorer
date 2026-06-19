@@ -464,6 +464,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 20px 64px; }
   border-radius: 2px; padding: 0 3px; vertical-align: middle; opacity: .8; }
 /* when on the model route, tint the list header so it doesn't read as factual */
 body.is-model .list-title { color: var(--model); }
+/* the shared timing-colour key is meaningless on the estimate/model views — hide it */
+body.is-model .legend { display: none; }
 
 .model-wrap { --accent: var(--model); }
 

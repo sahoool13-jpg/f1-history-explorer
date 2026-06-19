@@ -841,6 +841,7 @@
     });
     ctrl.appendChild(presets);
     host.appendChild(ctrl);
+    var pctEls = ctrl.querySelectorAll(".qsl-pct");   // detached refs (host not yet mounted)
 
     host.appendChild(el("p", "model-sub qnote",
       "Each bar is the <b>95% interval</b>; the tick is the point estimate. <b>Overlapping bars are not " +
@@ -857,7 +858,7 @@
     function recompute() {
       var sum = W[0] + W[1] + W[2] || 1;
       var w = [W[0] / sum, W[1] / sum, W[2] / sum];
-      AX.forEach(function (a, i) { $("qpct" + i).textContent = Math.round(100 * w[i]) + "%"; });
+      AX.forEach(function (a, i) { pctEls[i].textContent = Math.round(100 * w[i]) + "%"; });
 
       var rows = Q.drivers.map(function (d) {
         var c = w[0] * d.z[0] + w[1] * d.z[1] + w[2] * d.z[2];
@@ -914,19 +915,21 @@
       }).join("");
     };
     cmp.innerHTML = "<div class='qc-h'>COMPARE — is the gap real under your weights?</div>" +
-      "<div class='qc-pick'><select id='qcA'>" + opt("Fernando Alonso") + "</select>" +
-      "<span class='qc-vs'>vs</span><select id='qcB'>" + opt("Antonio Giovinazzi") + "</select></div>" +
-      "<div id='qcOut' class='qc-out'></div>";
+      "<div class='qc-pick'><select class='qcA'>" + opt("Fernando Alonso") + "</select>" +
+      "<span class='qc-vs'>vs</span><select class='qcB'>" + opt("Antonio Giovinazzi") + "</select></div>" +
+      "<div class='qc-out'></div>";
+    var selA = cmp.querySelector(".qcA"), selB = cmp.querySelector(".qcB"),
+        outEl = cmp.querySelector(".qc-out");   // detached refs (host not yet mounted)
 
     function renderCompare() {
-      var a = LAST[$("qcA").value], b = LAST[$("qcB").value];
+      var a = LAST[selA.value], b = LAST[selB.value];
       if (!a || !b) return;
-      var hi = a.c >= b.c ? { n: $("qcA").value, v: a } : { n: $("qcB").value, v: b };
-      var loD = a.c >= b.c ? { n: $("qcB").value, v: b } : { n: $("qcA").value, v: a };
+      var hi = a.c >= b.c ? { n: selA.value, v: a } : { n: selB.value, v: b };
+      var loD = a.c >= b.c ? { n: selB.value, v: b } : { n: selA.value, v: a };
       var gap = hi.v.c - loD.v.c;
       var sep = (hi.v.c - hi.v.ci) > (loD.v.c + loD.v.ci);   // intervals clear of each other
-      var out = $("qcOut");
-      if ($("qcA").value === $("qcB").value) { out.className = "qc-out"; out.innerHTML = "<span class='qc-tie'>same driver</span>"; return; }
+      var out = outEl;
+      if (selA.value === selB.value) { out.className = "qc-out"; out.innerHTML = "<span class='qc-tie'>same driver</span>"; return; }
       out.className = "qc-out " + (sep ? "qc-sep" : "qc-tie-out");
       out.innerHTML = sep
         ? "<b>" + esc(hi.n) + "</b> is clearly ahead — composite gap <b>" + gap.toFixed(2) +
@@ -970,10 +973,6 @@
       "Inputs trace to the validated Phase G/H/I artifacts; nothing here is re-measured. Estimates throughout.</p>" +
       "</div>";
 
-    // give the % spans stable ids before first recompute()
-    var pcts = ctrl.querySelectorAll(".qsl-pct");
-    for (var i = 0; i < pcts.length; i++) pcts[i].id = "qpct" + i;
-
     // wire events
     ctrl.addEventListener("input", function (e) {
       var ax = e.target.getAttribute("data-ax");
@@ -987,7 +986,8 @@
       for (var i = 0; i < ranges.length; i++) ranges[i].value = W[i];
       recompute(); renderCompare();
     });
-    cmp.addEventListener("change", renderCompare);
+    selA.addEventListener("change", renderCompare);
+    selB.addEventListener("change", renderCompare);
 
     recompute();
     host.appendChild(el("div", "model-divider", "Compare two drivers under your weighting"));
