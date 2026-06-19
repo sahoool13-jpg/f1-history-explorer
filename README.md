@@ -3,7 +3,7 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
-## Status: Phase A ✅ + Phase B (championship analysis) ✅
+## Status: Phases A–G ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised)
 
 Phase A is **ingest + a validated relational base + the factual teammate
 head-to-head spine** only. No rankings, no Elo, no car-normalisation, no UI —
@@ -633,4 +633,72 @@ panels):
 Reads straight from `driver_season_pace_estimate` (separate `model.trajectories`
 block; `is_estimate` preserved). Below the arcs sits the Phase-E **career-average
 snapshot** for one-number-per-driver context.
+
+# Phase G — era-normalisation via spanning-driver bridges ⚠️ ESTIMATE
+
+Phase F is car-normalised and time-resolved, but its scale is only as trustworthy
+as the chain of teammate links tying a given driver-season back to the rest of the
+field. A driver who only ever shared a car inside a **weak, locally isolated
+cluster** can float to an inflated level on intra-cluster deltas alone — nothing
+pulls that cluster onto the cross-era scale. Phase G fixes the **anchoring**, never
+the relative structure, and **never assumes an era is strong or weak**: the
+cross-era scale is allowed to *emerge* from real overlapping careers.
+
+Run: `python3 pipeline/run_phase_g.py` → **Phase G gate: 14 PASS / 0 FAIL**.
+
+## Method — a spanning backbone + selective shrinkage
+
+- **Spanning backbone.** A driver is a *spanning bridge* if their teammate record
+  spans ≥ 10 years **and** touches teammates in ≥ 2 of three era-thirds (boundaries
+  at 2003\|2004 and 2013\|2014). **26 such drivers** (Alonso 2001–24, Räikkönen
+  2001–21, Schumacher 1994–2012, Coulthard 1994–2008, Webber 2002–13, …). Their
+  driver-season nodes form the **backbone**; everyone else is **free**.
+- **Effective resistance to the backbone.** On the full Phase-F Laplacian (teammate +
+  continuity edges), ground the backbone and read `R_bb = diag((L_ff)⁻¹)`. Small when
+  a season is tied to the spine by many short paths; **explodes** when it hangs off
+  one thin bridge — or sits in a component the spine never reaches (Marussia 2013–14,
+  who only raced each other: `R_bb → ∞`). This is the honest measure of *how
+  confidently a season can be placed cross-era*.
+- **Spine consensus.** Harmonic extension of the backbone ratings to the free nodes
+  (`L_ff μ_f = b_f − L_fb r_backbone`) — "where the real chains, followed back to the
+  spine, say this node sits", derived purely from measured deltas.
+- **Selective shrinkage (the era-normalisation).** Re-solve with a per-node prior that
+  pulls each free node toward its spine consensus with strength `K0·R_bb_i`
+  (`K0 = 1`). Well-anchored nodes are left to the data; thinly-bridged pockets are
+  pulled onto the spine. This **re-references a pocket's absolute level while
+  preserving the within-pocket teammate deltas** (reconstruction unchanged). Gauge:
+  mean over the backbone = 0, so the cross-era zero is the empirically-bridged spine,
+  not the population mix.
+- **Uncertainty.** Cross-era CI = `Z95·σ̂·√(C_ii/σ² + R_bb)` — Phase-F intra-model
+  variance **plus** the backbone-anchoring resistance. Thinly-bridged / disconnected
+  nodes blow out so wide they make **no cross-era claim**, exactly where the bridges
+  run thin. The prior moving a point estimate does **not** shrink its uncertainty.
+
+## Phase G gate (14 PASS / 0 FAIL)
+
+| Check | Result |
+|-------|--------|
+| **Bridge reality**: 26 spanning drivers; **17** straddle 2003\|2004, **13** straddle 2013\|2014 → **≥13 independent** end-to-end bridges connect 1994–2003 to 2014–2024 | PASS |
+| **Selective deflation**: isolated Marussia 2013 (`R_bb→∞`, *unanchored*) — Chilton **+0.562 → +0.289**; **within-pocket Bianchi−Chilton delta preserved exactly (−0.577)** | PASS |
+| **Honest Giovinazzi finding**: already anchored by Phase-F continuity (`R_bb=0.013`), so Phase G **barely moves him** (2021 −0.291 → −0.288). The de-inflation happened at F, not here — reported, not faked | PASS |
+| **Decline preserved**: prime Räikkönen 2005–07 **−0.114** rates faster than late Alfa 2019–21 **−0.007** | PASS |
+| **Uncertainty honesty**: median cross-era CI anchored **±0.534 s** vs thin/unanchored **±1.438 s**; 4 pockets flagged *unanchored* | PASS |
+| **Selectivity**: well-bridged core barely moves (Hamilton 2008 Δ +0.001, Alonso 2012 Δ +0.003; max \|Δ\| **0.004 s**) | PASS |
+| **Reconstruction**: median \|resid\| **0.056 s** (Phase F 0.057) — re-anchoring did not break the fit | PASS |
+| Separation/labelling: `is_estimate=1`, measured Tier-1 deltas untouched | PASS |
+
+**The honest correction in one line:** the spec expected Phase G to *deflate*
+Giovinazzi, but the data shows Phase F's continuity prior (via Räikkönen's own
+career chain) had **already** anchored him — Phase G confirms he is well-bridged
+and correctly leaves him alone. The genuine weak-pocket inflation Phase G fixes is
+the backbone-**disconnected** clusters (Marussia 2013–14, mid-90s backmarkers like
+Ratzenberger/Gounon/Papis): their floating absolute level is pulled to the spine
+consensus *with within-pocket deltas preserved*, and their uncertainty blown out so
+they make no cross-era claim.
+
+Artifacts: `driver_season_pace_era_estimate` (766 driver-seasons; era rating +
+Phase-F rating on the same backbone gauge + `R_bb` + cross-era CI + anchor flag),
+`pace_model_era_residual` (456), `era_bridge_density` (per era boundary). All
+`is_estimate=1`, separate from the measured deltas. No UI this phase (combination is
+Phase J, presentation Phase K).
 
