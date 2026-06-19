@@ -3,7 +3,7 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
-## Status: Phases A–G ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised)
+## Status: Phases A–H ✅ (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft)
 
 Phase A is **ingest + a validated relational base + the factual teammate
 head-to-head spine** only. No rankings, no Elo, no car-normalisation, no UI —
@@ -701,4 +701,74 @@ Phase-F rating on the same backbone gauge + `R_bb` + cross-era CI + anchor flag)
 `pace_model_era_residual` (456), `era_bridge_density` (per era boundary). All
 `is_estimate=1`, separate from the measured deltas. No UI this phase (combination is
 Phase J, presentation Phase K).
+
+# Phase H — the RACECRAFT axis (results-vs-car-strength) ⚠️ CONSTRUCTED ESTIMATE
+
+The pace axes (qualifying = G, race pace = D) measure how **fast** a driver is. They
+cannot see Sunday: starts, overtaking, tyre/SC execution, and not binning it. Phase H
+isolates exactly that — how well a driver turned the **machinery** into a **result**,
+*beyond what their raw pace predicts*. This is where a quick-on-Saturday, poor-on-Sunday
+driver is finally separated. It is a **constructed/modelled axis** (more so than pace) —
+so the caveats are heavier and the intervals wider.
+
+Run: `python3 pipeline/run_phase_h.py` → **Phase H gate: 13 PASS / 0 FAIL**.
+
+## Method — finishing margin, with pace regressed out
+
+The four traps and how each is avoided:
+
+1. **Circularity** — the car's "deserved" result is never read off the driver's own
+   outcome. The independent baseline is the **teammate** (same car): result *relative to
+   the teammate* is the car-controlled signal.
+2. **Luck ≠ racecraft** — a race counts only when both cars had a *driver-attributable*
+   outcome. Status buckets: **CLASSIFIED** (`Finished` / `+N Laps`); **DRIVER_ERROR**
+   (`Accident`, `Spun off` — unambiguous solo error, counts as a loss); **EXCLUDED**
+   (mechanical DNFs, `Collision`/`Damage`/`Debris` — ambiguous victim/aggressor — DNQ,
+   withdrawals). **35 % of all teammate races are dropped** as luck/ambiguous.
+3. **Redundancy with pace** — take the head-to-head **finishing-position margin**
+   (winsorised ±10) and **regress out both the quali delta and the race-pace delta**
+   (one OLS, `margin ≈ 1.23·(−quali) + 1.95·(−racepace)`; pace explains R²=0.31). The
+   **residual** — finished better/worse than the pace gap predicts — is the pure
+   racecraft signal, orthogonal to both pace axes by construction.
+4. **Era-incomparable points** — everything is in **finishing positions vs the
+   teammate**, never championship points.
+
+**Driver-level network** (racecraft is sparse → career nodes): one edge per pair-season
+with target = racecraft residual, weight = #eligible races; solve the weighted
+Laplacian → career racecraft rating in *"positions better than pace predicts."*
+**Era-normalised** with the Phase-G spanning-bridge machinery (25 bridges; racecraft
+lives in the lap-timing era ~1996+, so "cross-era" means across that window):
+effective resistance to the backbone shrinks poorly-anchored drivers toward the spine
+and blows out their cross-era uncertainty.
+
+## Phase H gate (13 PASS / 0 FAIL)
+
+| Check | Result |
+|-------|--------|
+| **Orthogonality**: career racecraft vs era pace **r = +0.079** (edge residual vs both pace deltas r = 0.000 by construction). *Same pace, different racecraft*: Fisichella **+0.44** vs Grosjean **−1.32** (Δpace ≈ 0.01 s) | PASS |
+| **Anchor sanity**: renowned racers positive — Alonso **+1.56**, Verstappen **+1.66**, Ricciardo **+1.01**; crash-prone Grosjean **−1.32** (the "not-crashing" signal); Alonso − Grosjean = **+2.88 pos** | PASS |
+| **The Giovinazzi check**: racecraft **−1.83 ± 1.87** — negative, converted worse than his pace predicted (consistent with the thesis); reported as-is, wide interval flagged | PASS |
+| **Luck-exclusion** (worked): Prost 2000 Heidfeld vs Alesi — **2 eligible / 14 dropped**; 35 % of all teammate races excluded | PASS |
+| **Reconstruction**: median \|resid\| **0.758 pos** (< 1.5) | PASS |
+| **Uncertainty honesty**: anchored ±**1.03** pos vs thin/unanchored ±**3.96** pos; intervals honestly wide throughout (constructed axis) | PASS |
+| Separation/labelling: `is_estimate=1`, measured results untouched | PASS |
+
+**What the axis catches that pace can't:** Grosjean and Fisichella sit at essentially
+the same era pace, but Grosjean's crash-prone Sundays drop him ~1.8 positions below
+where his pace would land him while Fisichella sits above — a separation invisible to
+the pace axes. The crash-prone tail (Grosjean) and the elite-racer head (Alonso,
+Verstappen, Ricciardo) emerge from the residual alone.
+
+**Honest limits (constructed axis):** racecraft needs Phase-D race-pace, which needs
+lap timing (~1996+), so the axis is **modern-era only** and "cross-era" is within that
+window. Intervals are wide (anchored ±1 pos; most drivers wider) — a single season vs
+one teammate is a noisy read of Sunday craft, and the model says so. `Collision` is
+treated as ambiguous and excluded, so genuinely-aggressive-but-clean overtaking that
+ended in a racing incident is neither rewarded nor punished.
+
+Artifacts: `driver_racecraft_estimate` (130 drivers; rating + `R_bb` + CI + #edges +
+#races + anchor flag), `racecraft_pair_residual` (347 pair-seasons; margin, pace
+prediction, luck drops — full audit trail), `racecraft_recon_residual`,
+`racecraft_meta` (pace coefficients, R², orthogonality). All `is_estimate=1`, separate
+from measured results. No UI this phase (combination = Phase J, presentation = Phase K).
 
