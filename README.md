@@ -526,3 +526,85 @@ treatment (dashed, hatched chrome) so it can never be mistaken for measured fact
 Every value is read from the validated `*_estimate` artifacts; the model section is
 a separate `model` block in `web/data.js`, never merged with the measured deltas.
 
+
+---
+
+# Phase F — time-varying car-normalisation ⚠️ ESTIMATE
+
+The evolution of the USP. Phase E used **one career-average rating per driver**,
+blending prime and decline into a single number (so beating *late* Räikkönen was
+miscredited as beating *career* Räikkönen). Phase F makes pace **time-resolved**:
+a teammate comparison is between two drivers **at a point in time**, not two fixed
+entities. Still an estimate — all the Phase E honesty discipline applies, and the
+validated Phase D deltas are untouched.
+
+Run: `python3 pipeline/run_phase_f.py` → **Phase F gate: 13 PASS / 0 FAIL**.
+
+## Method — driver-SEASON nodes + a smoothing prior
+
+Nodes become **driver-seasons** (e.g. `Räikkönen_2005` ≠ `Räikkönen_2020`). Edges:
+- **Teammate edges** (one per Phase-D Tier-1 pair-season): `r_{A,yr} − r_{B,yr} ≈ d`.
+- **Continuity (smoothing) edges**: a **random-walk prior** linking each driver's
+  consecutive seasons `r_{d,s+gap} − r_{d,s} ≈ 0`, weight `λ/gap` — pace may drift
+  year to year but not jump. This regularises the network (84% of driver-seasons
+  have only one teammate edge, so without the prior they'd be unsolvable).
+
+Solve `minimise Σ_tm w(r_i−r_j−d)² + Σ_cont (λ/gap)(r_i−r_j)²`, gauge `Σr=0`, via
+`r = L⁺ b`. Graph: **766 driver-season nodes, 456 teammate + 594 continuity edges**.
+
+### Choosing λ (the key tuning choice — stated, not hidden)
+
+λ is **not** taken from CV-argmin. Cross-validation on this data is **monotone in
+λ** (it keeps preferring more smoothing → collapse to the Phase-E career-average,
+which defeats the phase) — CV is therefore *uninformative* here, and we report the
+curve to show it. Instead λ is set from an **interpretable random-walk drift
+prior**: `σ_drift = 0.10 s/yr` (a plausible year-on-year change for a top driver),
+giving **λ = 1/σ_drift² = 100**. This sits in the CV-flat band and resolves known
+career arcs without fitting single-season noise.
+
+**Sensitivity** (Hamilton, under λ=25 / **100** / 400):
+
+| Season | ×¼ (λ25) | ×1 (λ100) | ×4 (λ400) |
+|--------|---------:|----------:|----------:|
+| 2008 | −0.63 | **−0.62** | −0.59 |
+| 2014 | −0.52 | **−0.54** | −0.55 |
+| 2020 | −0.41 | **−0.44** | −0.47 |
+| 2024 | −0.22 | **−0.26** | −0.34 |
+
+Stronger smoothing flattens the late decline toward a career-average; weaker
+smoothing tracks single seasons more closely. λ=100 keeps the arc while staying
+smooth. (Full sensitivity for 5 drivers is in `pace_model_tv_sensitivity`.)
+
+## Uncertainty
+
+Same analytic propagation (`C = σ̂²·L⁺`, σ̂² scaled by the residual misfit). Effective
+params `p_eff ≈ 304` of 766 nodes; **σ̂² = 3.34** (lower than Phase E's 6.09 — time
+resolution explains more). Intervals are **wider than Phase E** (sparser nodes,
+median 95% CI ≈ ±0.48 s) — that is honest: a driver-season on one thin edge *should*
+read as very uncertain.
+
+## Phase F gate (13 PASS / 0 FAIL) — has qualitative ground truth
+
+| Check | Result |
+|-------|--------|
+| **Schumacher** comeback (2010–12 **−0.23**) rates below prime (1994–04 **−0.91**) | PASS (Δ +0.68) |
+| **Räikkönen** Alfa (2019–21 **−0.28**) rates below prime (2005–07 **−0.39**) | PASS (Δ +0.10) |
+| **Alonso** late (2021–24 **−0.38**) rates below peak (2005–12 **−0.66**) | PASS (Δ +0.29) |
+| **Giovinazzi de-inflation**: Phase E **−0.894** → Phase F **−0.365** (benchmark is now faded Räikkönen, not career Räikkönen) | PASS (+0.53 s) |
+| Smoothing sanity: Hamilton/Alonso arcs not flat, not noise (range ~0.4 s, median \|Δyr\| ~0.03–0.05 s) | PASS |
+| Reconstruction: median \|resid\| **0.057 s** (Phase E 0.124 s) — time resolution fits better | PASS |
+| Connectivity: single-edge driver-seasons wider & flagged; intervals widened honestly | PASS |
+| Separation/labelling: `is_estimate=1`, measured Tier-1 deltas untouched | PASS |
+
+**The Giovinazzi case is the thesis in one number:** career-blended Räikkönen
+(−0.706, prime-weighted) made beating him look elite; time-resolved, the man
+Giovinazzi actually out-qualified was *faded* Räikkönen (−0.284), so Giovinazzi's
+estimate drops from a wildly inflated −0.894 to a midfield-realistic −0.365.
+
+Artifacts: `driver_season_pace_estimate` (766 driver-seasons; rating + CI +
+connectivity), `pace_model_tv_residual` (456), `pace_model_tv_sensitivity` (5
+drivers × 3 λ). All `is_estimate=1`, separate from the measured deltas.
+
+> Data/computation phase. The natural next presentation pass is **career-arc
+> trajectory charts** (rating vs season with CI ribbons) in the `#/model` view —
+> spec'd for a following pass, keeping the violet "estimate" treatment.
