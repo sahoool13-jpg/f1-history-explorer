@@ -42,7 +42,7 @@ def build(con):
             )
         )
         SELECT c.season, d.full_name, d.code, cc.constructor_name,
-               CAST(c.points AS DOUBLE), CAST(c.wins AS INT)
+               CAST(c.points AS DOUBLE), CAST(c.wins AS INT), c.driverId
         FROM champ c JOIN dim_drivers d USING (driverId)
         JOIN champ_con cc ON cc.season=c.season AND cc.driverId=c.driverId AND cc.rn=1
     """)}
@@ -66,6 +66,71 @@ def build(con):
             {"table": label_for_table(tk), "key": tk, "champ": ch,
              "changes": bool(changes), "tie": bool(is_tie),
              "own": tk == SEASON_TABLE[season], "pts": round(tp, 1)})
+
+    # ---- Phase D pace deltas (presentation only — read the validated artifacts) ----
+    dname = {r[0]: (r[1], r[2], r[3]) for r in
+             q("SELECT driverId, full_name, code, surname FROM dim_drivers")}
+    cname = {r[0]: r[1] for r in q("SELECT constructorId, constructor_name FROM dim_constructors")}
+
+    quali_ps = {}   # (season,cid,dA,dB) -> quali delta (A-B; negative => A faster). Tier 1.
+    for r in q("""SELECT season, constructorId, driverA, driverB, median_gap_s, mean_gap_s,
+                         n_included, n_valid, a_faster_races, n_incident
+                  FROM quali_teammate_delta_pairseason"""):
+        quali_ps[(r[0], r[1], r[2], r[3])] = {
+            "median": r[4], "mean": r[5], "n": r[6], "races": r[7],
+            "aFaster": r[8], "incidents": r[9]}
+
+    race_ps = {}    # (season,cid,dA,dB) -> race-pace delta (A-B s/lap). Tier 2.
+    for r in q("""SELECT season, constructorId, driverA, driverB, median_delta_s, mean_delta_s,
+                         n_ok_races, n_low_races FROM racepace_teammate_pairseason"""):
+        race_ps[(r[0], r[1], r[2], r[3])] = {
+            "median": r[4], "mean": r[5], "nOk": r[6], "nLow": r[7]}
+
+    def pair_block(key):
+        """Native A<B orientation: quali/race deltas with sign A-B (neg => A faster)."""
+        qd, rd = quali_ps.get(key), race_ps.get(key)
+        season, cid, dA, dB = key
+        out = {
+            "year": season, "constructor": cname.get(cid),
+            "aId": dA, "aName": dname[dA][0], "aCode": dname[dA][1], "aSur": dname[dA][2],
+            "bId": dB, "bName": dname[dB][0], "bCode": dname[dB][1], "bSur": dname[dB][2],
+            "quali": None, "race": None,
+        }
+        if qd and qd["median"] is not None:
+            out["quali"] = {"median": round(qd["median"], 3), "mean": round(qd["mean"], 3),
+                            "n": qd["n"], "races": qd["races"], "aFaster": qd["aFaster"],
+                            "incidents": qd["incidents"], "tier": 1}
+        if rd and rd["nOk"] is not None:
+            out["race"] = {"median": (round(rd["median"], 3) if rd["median"] is not None else None),
+                           "nOk": rd["nOk"], "nLow": rd["nLow"], "tier": 2}
+        return out
+
+    pairings = [pair_block(k) for k in (set(quali_ps) | set(race_ps))]
+    pairings.sort(key=lambda p: (p["year"], p["constructor"] or "", p["aSur"]))
+
+    def champ_delta(season, champ_id):
+        """Champion-oriented primary-teammate delta (negative => champion faster)."""
+        cands = [k for k in (set(quali_ps) | set(race_ps)) if k[0] == season and champ_id in (k[2], k[3])]
+        if not cands:
+            return None
+        def races(k):
+            qd = quali_ps.get(k); rd = race_ps.get(k)
+            return ((qd["races"] if qd else 0), (rd["nOk"] if rd else 0))
+        key = max(cands, key=races)
+        season_, cid, dA, dB = key
+        tm_id = dB if champ_id == dA else dA
+        sign = 1 if champ_id == dA else -1     # flip A-B to champion perspective
+        qd, rd = quali_ps.get(key), race_ps.get(key)
+        block = {"vs": dname[tm_id][0], "vsCode": dname[tm_id][1], "vsSur": dname[tm_id][2],
+                 "multiple": len(cands) > 1, "quali": None, "race": None}
+        if qd and qd["median"] is not None:
+            champ_faster = qd["aFaster"] if champ_id == dA else (qd["races"] - qd["aFaster"])
+            block["quali"] = {"median": round(sign * qd["median"], 3), "mean": round(sign * qd["mean"], 3),
+                              "n": qd["n"], "races": qd["races"], "champFaster": champ_faster, "tier": 1}
+        if rd and rd["nOk"] is not None:
+            block["race"] = {"median": (round(sign * rd["median"], 3) if rd["median"] is not None else None),
+                             "nOk": rd["nOk"], "nLow": rd["nLow"], "tier": 2}
+        return block
 
     seasons = []
     for yr in sorted(champ_meta):
@@ -92,6 +157,7 @@ def build(con):
                 "rRaces": t[7], "rWins": t[8], "rLosses": t[9],
                 "champPoints": round(t[10], 1), "tmPoints": round(t[11], 1),
                 "outQualified": bool(t[12]), "outRaced": bool(t[13]),
+                "delta": champ_delta(yr, cm[6]),
             },
             "invariance": inv[yr],
             "flips": flips,
@@ -112,11 +178,13 @@ def build(con):
             "finaleTitles": sum(1 for s in seasons if s["clinch"]["wentToFinale"]),
             "scoringSensitive": sum(1 for s in seasons if s["anyChange"]),
             "tieSeasons": sum(1 for s in seasons if s["hasTie"]),
+            "qualiDeltaPairings": sum(1 for p in pairings if p["quali"]),
+            "racePacePairings": sum(1 for p in pairings if p["race"]),
         },
     }
 
     WEB.mkdir(exist_ok=True)
-    payload = {"meta": meta, "seasons": seasons}
+    payload = {"meta": meta, "seasons": seasons, "pairings": pairings}
     out = WEB / "data.js"
     with open(out, "w") as f:
         f.write("/* GENERATED by pipeline/export_web.py — do not edit by hand. */\n")

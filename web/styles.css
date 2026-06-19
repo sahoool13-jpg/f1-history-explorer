@@ -400,3 +400,54 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 20px 64px; }
   .lt { font-size: 12px; }
   .lt thead th, .lt tbody td { padding: 9px 10px; }
 }
+
+/* ============================================================================
+   PHASE D — measured pace deltas (dossier block + #/pace view)
+   ========================================================================== */
+
+/* tier chip — the non-negotiable comparability indicator */
+.tier { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em;
+  padding: 1px 5px; border-radius: 2px; vertical-align: middle; margin-left: 2px;
+  border: 1px solid; cursor: help; }
+.tier1 { color: var(--t-purple); border-color: rgba(179,136,255,.45); background: rgba(179,136,255,.10); }
+.tier2 { color: var(--t-yellow); border-color: rgba(255,210,63,.40);  background: rgba(255,210,63,.07); }
+.tier3 { color: var(--ink-dim);  border-color: var(--line-2);          background: var(--panel-2); }
+
+/* reliability badges */
+.rel { font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600; }
+.rel-ok  { color: var(--t-green); }
+.rel-low { color: var(--t-red); }
+
+/* dossier pace block */
+.tm-pace { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.tm-pace-h { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-mut); font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.tm-pace-src { font-size: 9.5px; letter-spacing: .04em; text-transform: none; color: var(--ink-dim); font-weight: 400; }
+.pace-row { margin-top: 11px; }
+.pace-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); }
+.pace-val { display: flex; align-items: baseline; gap: 9px; margin-top: 3px; }
+.pace-val .delta { font-family: var(--disp); font-weight: 700; font-size: 24px;
+  color: var(--t-purple); font-variant-numeric: tabular-nums; }
+.pc-fast { color: var(--t-purple); font-weight: 700; font-size: 13px; letter-spacing: .03em; }
+.pc-slow { color: var(--ink-dim); font-size: 12px; }
+.pace-sub { font-size: 11px; color: var(--ink-dim); margin-top: 3px; }
+.pace-na .pace-na-txt { font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-style: italic; }
+.pace-na .rel-low { font-style: normal; margin-left: 6px; }
+
+/* #/pace league-table cells */
+.lt .delta { font-family: var(--mono); font-weight: 600; color: var(--t-purple);
+  font-variant-numeric: tabular-nums; }
+.lt .pc-fast { font-size: 12px; }
+.lt .pc-slow { font-size: 11px; color: var(--ink-dim); }
+.lt .unit { color: var(--ink-dim); font-size: 10px; margin-left: 2px; }
+
+@media (max-width: 820px) {
+  .pace-val .delta { font-size: 20px; }
+}
+
+/* small-sample treatment in the pace leaderboard */
+.lt-dim { opacity: .72; }
+.n-small { color: var(--t-yellow); font-variant-numeric: tabular-nums; font-weight: 600; }
+.n-small::after { content: " ⚠"; font-size: 9px; }
+
+.delta-weak { opacity: .45; font-weight: 400 !important; }

@@ -381,3 +381,18 @@ layout/regulation change (not ground truth). A 2004 vs 2024 lap is **not** the s
 
 This phase is data/computation; the deltas presentation will be designed once the
 numbers are validated. (Validated via Python; live render — none added this phase.)
+
+### Surfaced in the UI (presentation pass)
+
+The validated deltas now appear in **Lift and Coast** (presentation only — read
+straight from the artifacts, nothing recomputed):
+
+- **Season dossier → VS. TEAMMATE** shows the champion's measured **qualifying Δ**
+  (Tier 1, e.g. *HAM −0.159s vs ROS*, median over n races) and **race-pace Δ**
+  (Tier 2, s/lap, with the reliable / flagged-low race counts) beside the H2H counts.
+- **`#/pace` — Teammate pace gaps**: a cross-season leaderboard of every pair-season's
+  quali Δ and race-pace Δ, faster driver in timing-purple with the negative sign.
+- **Tier chips (T1/T2/T3)** sit on every delta; the ranked list requires ≥5
+  comparison races (small samples drop to a separate dimmed section), and
+  race-pace deltas from <3 reliable races are dimmed and flagged. The 1994+ /
+  1996+ data boundaries are shown explicitly.
