@@ -308,3 +308,76 @@ name for the finals view).
 
 > Validated via Python + jsdom in the sandbox (DuckDB-wasm can't run here); the
 > live render still needs an eyeball check on the deployed site.
+
+---
+
+# Phase D — pace & deltas foundation ✅
+
+Tenths-level pace **measurement** on the real lap-time and qualifying data — the
+empirical bedrock for the eventual car-normalisation USP (Phase E). **Pure
+measurement, no modelling.** Guiding principle: compute a delta only where the
+comparison is genuinely clean, and tag every delta with a **comparability tier**
+so nothing reads as more precise than it is.
+
+Run: `python3 pipeline/run_phase_d.py` → **Phase D gate: 17 PASS / 0 FAIL**.
+
+| Tier | Meaning | Artifact(s) |
+|------|---------|-------------|
+| **1** | same session / track / car | `quali_teammate_delta_*` |
+| **2** | same race / car, clean-lap method | `racepace_teammate_*` |
+| **3** | cross-era / cross-context (contextual only) | `event_pace`, `circuit_layout` |
+
+| Artifact | Rows | Grain |
+|----------|-----:|-------|
+| `quali_teammate_delta_race` | 5,231 | per (pair, race): deepest-common-session gap (s) |
+| `quali_teammate_delta_pairseason` | 456 | per (season, constructor, pair): robust mean/median/std |
+| `quali_teammate_delta_career` | 172 | per driver: pooled delta vs all teammates |
+| `racepace_teammate_race` | 5,321 | per (pair, race): clean-lap pace delta (s/lap) + reliability |
+| `racepace_teammate_pairseason` | 407 | per (season, constructor, pair): aggregate over reliable races |
+| `event_pace` | 1,125 | per race: pole time + fastest race lap (Tier-3 facts) |
+| `circuit_layout` | 77 | per circuit: layout-stability note + heuristic discontinuity flag |
+
+## Methods (exact)
+
+**Qualifying delta (Tier 1).** Times parsed `M:SS.mmm`→seconds. Comparison basis =
+the **deepest qualifying session both drivers set a time in** (Q3 if both reached
+it, else Q2, else Q1) — strictly like-for-like. `gap = A − B` (pair ordered
+driverA<driverB; negative ⇒ A faster). A `|gap| > 3.0s` is flagged
+**non-representative** (crash/mechanical/aborted lap) and excluded from the stats
+(counted separately); races with no common timed session are counted as
+`no_common_session`. **Median is the primary statistic** (incident-insensitive);
+mean/std use an additional within-pair MAD fence (median ± 3·1.4826·MAD, scale
+floored at 0.25s). 1994+ only.
+
+**Race-pace delta (Tier 2).** From `lap_times.milliseconds`, a **clean green-lap
+median**, not a naive mean. Per race we exclude: **lap 1**; **safety-car/VSC laps**
+(field-median lap > 1.15× the race baseline, excluded field-wide); **pit in/out
+laps** (`{pit_lap, pit_lap+1}` from pit_stops, 2011+; earlier races fall back to
+outliers); **per-driver outliers** (slower than median+3·1.4826·MAD, or >1.30× own
+median). Pace = median of remaining clean laps; `delta = A − B` (s/lap). Each race
+carries a **reliability** tag — `low` if: <8 clean laps for either driver; either
+classified with <90% race distance (DNF/delayed); >30% safety-car laps; pit-count
+differs by ≥2 (strategy); or clean-lap imbalance. Only `ok` races feed the
+pair-season aggregate; `low` races are kept but counted separately.
+
+**Pole & fastest lap (Tier 3).** Per-event facts (pole = polesitter's best session
+time; fastest lap = min lap-time). Cross-era comparison is **contextual only**:
+circuit layout/length history is **not in the dataset**, so `layout_stability` is
+`undetermined`; a heuristic flags year-on-year pole jumps >4% as a *possible*
+layout/regulation change (not ground truth). A 2004 vs 2024 lap is **not** the same lap.
+
+## Phase D gate (17 PASS / 0 FAIL)
+
+| Check | Result |
+|-------|--------|
+| 2016 Mercedes HAM vs ROS quali delta | **−0.159s median** (Hamilton faster), tenths; sign-count 12–7 reconciles Phase A 12–8 |
+| 2019 Red Bull VER vs GAS quali delta | **−0.409s** (Verstappen faster), large; sign-count 10–1 matches Phase A |
+| Race-pace clean race (2016 Abu Dhabi) | +0.173s/lap, reliability **ok** |
+| Safety-car race (2016 Brazil, 46% SC) | correctly flagged **low** (`safety_car_heavy`) |
+| DNF race (2016 Malaysia) | correctly flagged **low** (`dnf_or_delayed`) |
+| Clean-lap exclusion (2016 Brazil) | 71 total laps → 35/36 clean retained (lap 1 + SC + pit/outliers removed) |
+| Sample-size honesty | 1,980 low-reliability flagged; 91 pair-seasons with ≤2 reliable races exposed |
+| Comparability tiers | every artifact row carries its tier (1/2/3) |
+
+This phase is data/computation; the deltas presentation will be designed once the
+numbers are validated. (Validated via Python; live render — none added this phase.)
