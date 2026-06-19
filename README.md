@@ -3,6 +3,21 @@
 An F1 history explorer (Hysplex umbrella), built on the CC0 **"Formula 1 World
 Championship 1950–2024"** dataset (compiled from Ergast).
 
+## Status: Phases A–K ✅ COMPLETE  ·  Phase L (axis-fairness) in progress
+
+> **Phase L / FIX 2 (longevity skew).** Effective-seasons is right-skewed (a few 18–21y
+> careers reach standardised **+2.95** vs pace's +1.87), so a long career over-reached the
+> top of the composite board. We **sqrt-transform longevity before standardising** (skew
+> **+0.83 → −0.00**; tail **+2.95 → +2.22**, toward the other axes), carrying its interval
+> through by the delta method (`σ → σ/(2√L)`). Barrichello (#4→#5) and Button (#6→#8) settle
+> to their multi-axis level. Pace is left-skewed (−1.01) but kept **untransformed** to
+> preserve its seconds-magnitude. *Honest note:* the realised variance **share** is
+> skew-invariant (standardisation forces unit variance), so it does not change — longevity's
+> high share reflects it being the best-**measured** axis (high τ²) under the Phase-K
+> interval-aware EB, which is correct, not a skew bug. τ² re-estimated: pace 0.883 /
+> racecraft 0.340 / longevity 0.965. Gate: `run_phase_l_fix2.py` → **FIX 2: 7 PASS / 0 FAIL**
+> (+ J 13/13, K 10/10 no-regression). *(FIX 1, racecraft grid-opportunity, is a separate PR.)*
+
 ## Status: Phases A–K ✅ COMPLETE (base · championship · pace · car-normalised model · time-varying · era-normalised · racecraft · longevity · user-weighted composite · interval-aware refinement + radar)
 
 Phase A is **ingest + a validated relational base + the factual teammate

@@ -109,10 +109,22 @@ def compute(con):
     ref = [d for d in universe if has_all(d) and I[d][2] >= MIN_SEASONS]
 
     # ---- oriented raw axis values (higher = better) + raw measurement sigma -----
+    # LONGEVITY is heavily right-skewed (a few 18-21y careers stretch the tail), so at
+    # equal nominal weight it swings the top of the board far more than pace/craft. We
+    # tame it with a sqrt transform BEFORE standardising (sqrt symmetrises it to skew~0;
+    # log/cbrt over-correct), propagating its CI by the delta method:
+    #   value -> sqrt(L),  sigma -> sigma_L / (2 sqrt(L)).
+    # PACE is left-skewed but is NOT transformed: the axis exists to preserve the
+    # seconds-magnitude signal; a monotone transform would discard it (no special pleading
+    # -- we report pace's skew but justify keeping its magnitude). RACECRAFT is near
+    # symmetric and is left as-is.
+    def _sqrtL(L):
+        Lc = max(L, 1e-3)
+        return np.sqrt(Lc), 1.0 / (2.0 * np.sqrt(Lc))     # value, d/dL
     raw = {  # axis -> driver -> (value, sigma)
         "pace": {d: (-pace[d], pace_ci[d] / Z95) for d in ref},
         "race": {d: (H[d][0], H[d][1] / Z95) for d in ref},
-        "long": {d: (I[d][0], I[d][1] / Z95) for d in ref},
+        "long": {d: (_sqrtL(I[d][0])[0], (I[d][1] / Z95) * _sqrtL(I[d][0])[1]) for d in ref},
     }
 
     def standardize(axis, ids):

@@ -1010,7 +1010,10 @@
       "<summary>How the composite works &amp; why there is no official ranking</summary>" +
       "<div class='mh-body'>" +
       "<p><b>Three axes, normalised.</b> Pace (G), racecraft (H), longevity (I) live on different scales, so each " +
-      "is z-scored against the " + Q.refN + " genuine ≥4-season careers — mean 0, sd 1, higher = better.</p>" +
+      "is z-scored against the " + Q.refN + " genuine ≥4-season careers — mean 0, sd 1, higher = better. " +
+      "<b>Longevity is sqrt-transformed first</b>: effective-seasons is right-skewed, so a few very long careers " +
+      "would otherwise stretch the top of the board; sqrt symmetrises it (its interval is carried through the " +
+      "transform). Pace is left-skewed but kept untransformed, to preserve its seconds-magnitude.</p>" +
       "<p><b>Interval-aware shrinkage (empirical Bayes).</b> Each axis estimate is pulled toward neutral in " +
       "proportion to its uncertainty (τ²: pace " + Q.tau2.cross.pace + ", racecraft " + Q.tau2.cross.race +
       ", longevity " + Q.tau2.cross.long + " — lower = more shrink). Racecraft is the noisy axis, so it shrinks " +
