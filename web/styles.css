@@ -451,3 +451,94 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 20px 64px; }
 .n-small::after { content: " ⚠"; font-size: 9px; }
 
 .delta-weak { opacity: .45; font-weight: 400 !important; }
+
+/* ============================================================================
+   PHASE E — PACE MODEL (estimate). Deliberately DISTINCT from the factual
+   amber/timing styling: violet "estimate" language, dashed chrome, CI bars hero.
+   ========================================================================== */
+:root { --model: #b388ff; --model-dim: #6f5aa6; --model-glow: rgba(179,136,255,.14); }
+
+.tab-model { color: var(--model); }
+.tab-model.active { color: var(--model); border-bottom-color: var(--model); }
+.tab-est { font-size: 8px; letter-spacing: .1em; border: 1px solid var(--model-dim);
+  border-radius: 2px; padding: 0 3px; vertical-align: middle; opacity: .8; }
+/* when on the model route, tint the list header so it doesn't read as factual */
+body.is-model .list-title { color: var(--model); }
+
+.model-wrap { --accent: var(--model); }
+
+/* caveat banner — unmissable */
+.model-banner {
+  border: 1px dashed var(--model-dim); border-left: 3px solid var(--model);
+  background:
+    repeating-linear-gradient(135deg, rgba(179,136,255,.05) 0 8px, transparent 8px 16px),
+    var(--panel);
+  border-radius: 4px; padding: 16px 18px; margin: 8px 0 26px;
+}
+.mb-tag { font-family: var(--disp); font-weight: 700; font-size: 13px; letter-spacing: .12em;
+  color: var(--model); text-transform: uppercase; margin-bottom: 10px; }
+.model-banner > div + div { margin-top: 7px; }
+.mb-what, .mb-isnt, .mb-era { font-size: 12.5px; line-height: 1.55; color: var(--ink-mut); }
+.mb-isnt b, .mb-what b { color: var(--ink); }
+.mb-era { color: var(--ink-dim); border-top: 1px solid var(--line); padding-top: 9px; margin-top: 11px; }
+
+.model-h { font-family: var(--disp); font-weight: 700; font-size: 15px; letter-spacing: .03em;
+  color: var(--ink); margin: 26px 0 4px; display: flex; align-items: center; gap: 9px; }
+.model-sub { color: var(--ink-mut); font-size: 12px; line-height: 1.5; margin: 0 0 14px; max-width: 760px; }
+.model-sub b { color: var(--ink); }
+
+/* CI-band rows: name | track | value */
+.m-axis { position: relative; height: 16px; margin: 6px 0 4px;
+  margin-left: 34%; }                                  /* aligns with .mtrack column */
+.m-axis-t { position: absolute; transform: translateX(-50%); font-size: 9.5px; color: var(--ink-dim);
+  font-variant-numeric: tabular-nums; }
+.m-axis-t.m-axis-zero { color: var(--model-dim); }
+.m-axis-faster { position: absolute; right: 0; font-size: 9px; letter-spacing: .1em;
+  color: var(--ink-dim); text-transform: uppercase; }
+.mrow { display: grid; grid-template-columns: 34% 1fr 92px; align-items: center;
+  gap: 10px; padding: 5px 0; }
+.mname { font-size: 12.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mrank { color: var(--ink-dim); font-variant-numeric: tabular-nums; font-size: 11px; }
+.mmeta { color: var(--ink-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.mtrack { position: relative; height: 18px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 2px; }
+.mzero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--model-dim); opacity: .5; }
+.mband { position: absolute; top: 4px; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, rgba(179,136,255,.25), rgba(179,136,255,.4));
+  border: 1px solid rgba(179,136,255,.5); }
+.mtick { position: absolute; top: 1px; bottom: 1px; width: 2px; background: var(--model);
+  box-shadow: 0 0 6px var(--model-glow); transform: translateX(-1px); }
+.mval { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink); }
+.mval .mci { color: var(--model); font-size: 11px; }
+
+/* compare widget */
+.mcompare { border: 1px dashed var(--line-2); border-radius: 4px; padding: 14px; margin-top: 6px; }
+.mc-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.mc-pick select { font-family: var(--mono); font-size: 13px; color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 3px; padding: 6px 8px; }
+.mc-vs { color: var(--ink-dim); font-size: 11px; letter-spacing: .1em; }
+.mc-row { padding: 4px 0; }
+.mband.mc-a { background: rgba(179,136,255,.35); }
+.mband.mc-b { background: rgba(255,210,63,.28); border-color: rgba(255,210,63,.5); }
+.mc-verdict { margin-top: 10px; padding: 11px 13px; border-radius: 3px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: 13px; line-height: 1.5; color: var(--ink-mut); }
+.mc-verdict b { color: var(--ink); }
+.mc-tie { color: var(--model); font-weight: 700; font-family: var(--disp); letter-spacing: .06em; }
+.mc-sep { color: var(--t-yellow); font-weight: 700; }
+.mc-note { color: var(--ink-dim); font-size: 12px; }
+
+.mci-wide { color: var(--t-red); font-variant-numeric: tabular-nums; }
+
+/* how it works */
+.model-how { margin: 28px 0 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+.model-how > summary { cursor: pointer; padding: 13px 16px; font-size: 12px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--model); font-weight: 600; }
+.mh-body { padding: 4px 18px 16px; border-top: 1px solid var(--line); }
+.mh-body p { font-size: 12.5px; line-height: 1.6; color: var(--ink-mut); margin: 12px 0; }
+.mh-body b { color: var(--ink); }
+
+@media (max-width: 820px) {
+  .mrow { grid-template-columns: 40% 1fr 78px; }
+  .m-axis { margin-left: 40%; }
+  .model-h { font-size: 14px; }
+}

@@ -495,3 +495,34 @@ context**, visually distinct from the measured timing-screen deltas:
 - Keep the Lift and Coast identity, but the modelled section signals *estimate*
   (e.g. distinct treatment from the amber-on-black factual deltas) so it can never
   be mistaken for the measured Tier-1/2 numbers.
+
+## Surfaced in the UI (`#/model` — presentation pass)
+
+The model is now in the site at **`#/model`** ("PACE MODEL · est"), deliberately
+**visually distinct** from the factual amber/timing panels — a violet "estimate"
+treatment (dashed, hatched chrome) so it can never be mistaken for measured fact:
+
+- An **unmissable caveat banner**: what it is (car-normalised *qualifying* pace vs
+  teammates, 1994+) and what it is **not** (greatness, racecraft, wheel-to-wheel,
+  titles, wet/tyre skill).
+- **Confidence intervals are the hero**: each driver is a CI *band* with the point
+  estimate as a tick on a shared seconds axis — **overlapping bars read as
+  "not separable"**, never a naked leaderboard.
+- A **pairwise compare** (defaults to Schumacher vs Verstappen) using the
+  effective-resistance CI: it reports **"STATISTICAL TIE"** when the gap is within
+  the uncertainty (SCH–VER: 0.061 s gap vs ±0.285 s).
+- A **thin-evidence section** sorted fastest-estimate-first so the danger is
+  obvious — Senna tops it on paper but with a ±0.64 s interval (3 races, 1994).
+- A **how-it-works / limitations** explainer (teammate-network method,
+  chain-confidence collapse, what the intervals mean, σ̂² caveat).
+
+> **Era-framing correction:** the brief's example "Schumacher here largely reflects
+> his 2010–2012 return" is **not** what the data shows — his teammate-delta record
+> spans **1994–2012** and includes his Ferrari-prime teammates (Irvine, Barrichello,
+> Massa). Stating the comeback-only caveat would have been false, so the UI uses the
+> genuine era-limitation case (**Senna: 1994 only**) and shows each driver's real
+> data span. Honesty over the script.
+
+Every value is read from the validated `*_estimate` artifacts; the model section is
+a separate `model` block in `web/data.js`, never merged with the measured deltas.
+
