@@ -396,3 +396,102 @@ straight from the artifacts, nothing recomputed):
   comparison races (small samples drop to a separate dimmed section), and
   race-pace deltas from <3 reliable races are dimmed and flagged. The 1994+ /
   1996+ data boundaries are shown explicitly.
+
+---
+
+# Phase E — car-normalisation model (the USP) ⚠️ ESTIMATE
+
+The first phase that **models** rather than measures. It estimates a relative
+driver **qualifying-pace** rating with the car removed, by solving the
+teammate-delta network. **There is no ground-truth "skill" column — every output
+here is an UNFALSIFIABLE ESTIMATE, not a measured fact.** It is labelled as such,
+ships with uncertainty, and is kept structurally separate from the validated
+Phase D measurements.
+
+Run: `python3 pipeline/run_phase_e.py` → **Phase E gate: 17 PASS / 0 FAIL** (method
+& sanity, *not* correctness — correctness is unprovable).
+
+## Method — teammate-linkage network least-squares
+
+Nodes = drivers (career-average pace). Edges = Phase D **Tier-1 teammate
+qualifying deltas** (one per pair-season). The car cancels within a teammate pair,
+so each edge observes the driver-pace difference `r_A − r_B ≈ d_AB`. We solve all
+edges at once by **weighted least squares** — a chained teammate comparison
+(A>B, B>C ⇒ A>C) propagated across the connected graph:
+
+> minimise `Σ_k w_k (r_i − r_j − d_k)²`, gauge `Σ r = 0`,
+> with `w_k = n_k / (std_k² + 0.15²)` (inverse-variance; the 0.15 s floor stops a
+> 1-race edge being over-trusted). Normal equations `L r = b` (L = weighted graph
+> Laplacian); solved `r = L⁺ b` (pseudoinverse → unique mean-zero solution).
+
+Rating is in **seconds vs the field mean, lower = faster**. Network spans **170
+drivers / 454 edges** (one giant component, 1994+); 2 isolated drivers are flagged
+not-comparable.
+
+## Uncertainty — analytic propagation (+ bootstrap cross-check)
+
+- Residual scale `σ̂² = Σ w_k resid_k² / dof`. Here **σ̂² ≈ 6**: the
+  single-number-per-driver (career-average) assumption leaves real scatter, so we
+  **scale the covariance by σ̂²**, widening every interval honestly. (Driver-season
+  *dynamic* modelling is the natural future refinement.)
+- Covariance `C = σ̂²·L⁺`; per-driver 95% CI `= ±1.96·√C_ii`.
+- **Pairwise** `Var(r_i − r_j) = σ̂²·R_eff(i,j)` — the **effective resistance**:
+  short, high-sample chains (direct modern teammates) → tight; long, weak,
+  cross-era chains → wide. This is *why* cross-era rankings must not read as
+  confident.
+- A fixed-seed bootstrap (seed `20240619`, 400 resamples) independently confirms
+  the analytic σ (corr ≈ 0.64 over rankable drivers).
+
+A driver is **`rankable`** (confident headline) only if well-connected
+(≥3 teammates, ≥5 observations, σ ≤ 0.30 s). Degree-1 / isolated / high-σ drivers
+are flagged and **excluded from confident ranking**.
+
+## Example estimates (WITH intervals)
+
+| Driver | Estimate (s vs mean) | 95% CI | Teammates | Confidence |
+|--------|---------------------:|:------:|:---------:|------------|
+| Max Verstappen | −1.113 | ±0.208 | 5 | rankable (tight, modern) |
+| Lewis Hamilton | −0.992 | ±0.181 | 6 | rankable |
+| Fernando Alonso | −0.979 | ±0.169 | 13 | rankable (best-connected) |
+| Michael Schumacher | −1.052 | ±0.233 | 7 | rankable |
+| Ayrton Senna | −1.29 | ±0.64 | 1 | **sparse** — 1994 only, not rankable |
+| Roland Ratzenberger | +1.57 | ±3.22 | 1 | **sparse** — 1 race, not rankable |
+
+**Cross-era is not confidently separable:** Schumacher vs Verstappen — estimated
+gap 0.061 s but pairwise 95% CI **±0.285 s** (long teammate chain), i.e. a
+statistical tie. The model says so rather than inventing a cross-era ranking.
+
+## Phase E gate (17 PASS / 0 FAIL — method/sanity, not truth)
+
+| Group | Check | Result |
+|-------|-------|--------|
+| Anchor sanity | model doesn't invert direct strong edges (HAM<ROS, VER<GAS, VER<PER, HAM<BOT); 88.5% sign-agreement on strong edges | PASS |
+| Reconstruction | solved ratings predict their own input deltas; median \|resid\| 0.124 s | PASS |
+| Uncertainty | sparse CI (0.83 s) ≫ rankable CI (0.27 s); cross-era pairwise ≫ direct | PASS |
+| Degenerate | isolated/degree-1 flagged, never rankable; dominant-car not inflated | PASS |
+| Separation | estimates in their own `*_estimate` table, `is_estimate=1`, never merged into measured Tier-1 | PASS |
+| Bootstrap | analytic vs bootstrap σ agree (corr 0.64) | PASS |
+
+Artifacts: `driver_pace_model_estimate` (172 rows; rating + CI + connectivity +
+confidence flag), `pace_model_residual` (454 rows; reconstruction residuals). Both
+carry `is_estimate=1` and are separate from the Phase D measured-delta tables.
+
+## Presentation spec (for a following pass — not built this phase)
+
+The modelled ratings must be surfaced in a **clearly-labelled "MODEL / ESTIMATE"
+context**, visually distinct from the measured timing-screen deltas:
+
+- A dedicated `#/model` view titled as an **estimate**, with a persistent "this is
+  our model, not measured fact" banner and a "how this works / limitations"
+  explainer (method + σ̂² caveat + cross-era warning).
+- **Confidence intervals shown as the primary visual** (error bars / CI ranges),
+  never a naked point ranking. Drivers whose intervals overlap are shown as
+  *not confidently separated*.
+- Only **rankable** drivers in the headline ranking; sparse/isolated shown
+  separately with their wide intervals and a flag.
+- **No cross-era ranking without its (wide) interval**; offer a pairwise
+  "compare two drivers" that reports the effective-resistance CI and says
+  "statistical tie" when it is one.
+- Keep the Lift and Coast identity, but the modelled section signals *estimate*
+  (e.g. distinct treatment from the amber-on-black factual deltas) so it can never
+  be mistaken for the measured Tier-1/2 numbers.
